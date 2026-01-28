@@ -83,6 +83,16 @@ check_prerequisites() {
         command -v adb > /dev/null 2>&1 || die "adb still not available after package install."
     fi
 
+    if ! command -v stty > /dev/null 2>&1; then
+        log "stty not found, installing coreutils-stty..."
+        if ls "$pkg_dir"/coreutils*.ipk 1>/dev/null 2>&1; then
+            opkg install "$pkg_dir"/*.ipk 2>/dev/null || true
+        else
+            opkg update 2>/dev/null && opkg install coreutils-stty || die "Failed to install coreutils-stty. Transfer .ipk packages to $pkg_dir or provide internet access."
+        fi
+        command -v stty > /dev/null 2>&1 || die "stty still not available after package install."
+    fi
+
     if ! command -v openssl > /dev/null 2>&1; then
         log "openssl not found, installing openssl-util..."
         if ls "$pkg_dir"/openssl-util*.ipk 1>/dev/null 2>&1; then

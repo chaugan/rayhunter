@@ -53,7 +53,7 @@ $PackageRepos = @(
 )
 
 $RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot")
-$RequiredPackages = @("adb", "openssl-util")
+$RequiredPackages = @("adb", "openssl-util", "coreutils-stty")
 
 $DownloadDir = Join-Path $PSScriptRoot "rayhunter-files"
 $PkgDir = Join-Path $DownloadDir "packages"

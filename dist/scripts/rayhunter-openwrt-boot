@@ -1,0 +1,147 @@
+#!/bin/sh /etc/rc.common
+#
+# rayhunter-openwrt-boot
+#
+# OpenWrt init script that re-enables ADB on the Quectel EP06 modem
+# and sets up port forwarding after each router boot.
+#
+# Install:
+#   cp rayhunter-openwrt-boot /etc/init.d/rayhunter-openwrt-boot
+#   chmod 755 /etc/init.d/rayhunter-openwrt-boot
+#   /etc/init.d/rayhunter-openwrt-boot enable
+
+START=99
+STOP=10
+
+USE_PROCD=1
+
+EP06_VID="0x2C7C"
+EP06_PID="0x0306"
+
+send_at() {
+    local port="$1"
+    local cmd="$2"
+    local timeout="${3:-2}"
+
+    stty -F "$port" 115200 raw -echo -echoe -echok -echoctl -echoke 2>/dev/null || true
+
+    # Flush input
+    cat "$port" > /dev/null 2>&1 &
+    local flush_pid=$!
+    sleep 0.1
+    kill "$flush_pid" 2>/dev/null || true
+    wait "$flush_pid" 2>/dev/null || true
+
+    printf '%s\r\n' "$cmd" > "$port"
+
+    local response=""
+    response=$(timeout "$timeout" cat "$port" 2>/dev/null) || true
+    echo "$response"
+}
+
+find_at_port() {
+    for port in /dev/ttyUSB*; do
+        [ -e "$port" ] || continue
+        local resp
+        resp=$(send_at "$port" "AT" 2)
+        if echo "$resp" | grep -q "OK"; then
+            echo "$port"
+            return 0
+        fi
+    done
+    return 1
+}
+
+unlock_adb() {
+    local at_port="$1"
+
+    # Get salt
+    local resp
+    resp=$(send_at "$at_port" "AT+QADBKEY?" 3)
+    if ! echo "$resp" | grep -q "OK"; then
+        logger -t rayhunter "AT+QADBKEY? failed"
+        return 1
+    fi
+
+    local salt
+    salt=$(echo "$resp" | grep '+QADBKEY:' | sed 's/.*+QADBKEY: *//' | tr -d '\r\n' | cut -c1-8)
+    if [ -z "$salt" ] || [ ${#salt} -lt 8 ]; then
+        logger -t rayhunter "Could not extract QADBKEY salt"
+        return 1
+    fi
+
+    # Compute unlock key
+    local full_hash
+    full_hash=$(openssl passwd -1 -salt "$salt" "SH_adb_quectel")
+    local unlock_key
+    unlock_key=$(echo "$full_hash" | cut -c13-28)
+
+    # Send unlock key
+    resp=$(send_at "$at_port" "AT+QADBKEY=\"$unlock_key\"" 3)
+    if ! echo "$resp" | grep -q "OK"; then
+        logger -t rayhunter "AT+QADBKEY unlock failed"
+        return 1
+    fi
+
+    # Enable ADB
+    resp=$(send_at "$at_port" "AT+QCFG=\"usbcfg\",$EP06_VID,$EP06_PID,1,1,1,1,1,1,0" 3)
+    if ! echo "$resp" | grep -q "OK"; then
+        logger -t rayhunter "Failed to enable ADB via usbcfg"
+        return 1
+    fi
+
+    return 0
+}
+
+start_service() {
+    logger -t rayhunter "Waiting for modem to be ready..."
+
+    # Wait for ttyUSB devices to appear (modem may take time after boot)
+    local retries=30
+    local at_port=""
+    while [ $retries -gt 0 ]; do
+        at_port=$(find_at_port 2>/dev/null) && break
+        retries=$((retries - 1))
+        sleep 2
+    done
+
+    if [ -z "$at_port" ]; then
+        logger -t rayhunter "Could not find modem AT port after waiting"
+        return 1
+    fi
+
+    logger -t rayhunter "Found AT port: $at_port"
+    logger -t rayhunter "Unlocking ADB..."
+
+    if ! unlock_adb "$at_port"; then
+        logger -t rayhunter "ADB unlock failed"
+        return 1
+    fi
+
+    logger -t rayhunter "ADB enabled, waiting for device..."
+    sleep 5
+
+    # Wait for ADB device
+    retries=10
+    while [ $retries -gt 0 ]; do
+        if adb devices 2>/dev/null | grep -q "device$"; then
+            break
+        fi
+        retries=$((retries - 1))
+        sleep 2
+    done
+
+    if ! adb devices 2>/dev/null | grep -q "device$"; then
+        logger -t rayhunter "ADB device did not appear"
+        return 1
+    fi
+
+    # Set up port forwarding
+    adb forward tcp:8080 tcp:8080
+    logger -t rayhunter "ADB port forwarding active (tcp:8080)"
+}
+
+stop_service() {
+    adb forward --remove tcp:8080 2>/dev/null || true
+    logger -t rayhunter "Port forwarding removed"
+}

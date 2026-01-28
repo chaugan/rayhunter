@@ -4,6 +4,7 @@ port = 8080
 debug_mode = false
 colorblind_mode = false
 # Device selection. This will be overwritten by the installer. Defaults to "orbic".
+# Supported: "orbic", "tplink", "tmobile", "wingtech", "pinephone", "uz801", "ep06"
 #device = "orbic"
 # UI Levels:
 #

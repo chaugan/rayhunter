@@ -451,10 +451,23 @@ reboot_and_verify() {
     log "Waiting 30 seconds for modem to restart..."
     sleep 30
 
-    # Need to re-detect AT port after reboot
-    detect_at_port
-    unlock_adb
-    wait_for_adb
+    # Wait for ADB to come back (ADB config persists across modem reboots)
+    local retries=15
+    while [ $retries -gt 0 ]; do
+        if adb devices 2>/dev/null | grep -q "device$"; then
+            log "  ADB device reconnected."
+            break
+        fi
+        retries=$((retries - 1))
+        sleep 2
+    done
+
+    if ! adb devices 2>/dev/null | grep -q "device$"; then
+        log "  ADB not available, attempting unlock..."
+        detect_at_port
+        unlock_adb
+        wait_for_adb
+    fi
 
     log "Checking if rayhunter is running..."
     local status
@@ -515,12 +528,18 @@ main() {
 
     check_root
     check_prerequisites
-    detect_at_port
-    save_usb_config
     get_rayhunter_binary
     generate_config
-    unlock_adb
-    wait_for_adb
+
+    # Skip AT unlock if ADB is already active
+    if adb devices 2>/dev/null | grep -q "device$"; then
+        log "ADB already active, skipping unlock."
+    else
+        detect_at_port
+        save_usb_config
+        unlock_adb
+        wait_for_adb
+    fi
     push_files
     install_boot_script
     reboot_and_verify

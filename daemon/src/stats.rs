@@ -180,7 +180,14 @@ pub struct RouteStatus {
     pub has_default_route: bool,
 }
 
-pub async fn get_route_status() -> Json<RouteStatus> {
+pub async fn get_route_status(State(state): State<Arc<ServerState>>) -> Json<RouteStatus> {
+    // EP06 modems handle data via QMI/RMNET passthrough to the router;
+    // the modem's own Linux typically has no default IP route even when
+    // the SIM is connected and working.
+    if matches!(state.config.device, Device::Ep06) {
+        return Json(RouteStatus { has_default_route: true });
+    }
+
     let mut cmd = Command::new("busybox");
     cmd.args(["ip", "route"]);
 

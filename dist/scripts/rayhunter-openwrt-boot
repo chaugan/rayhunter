@@ -97,52 +97,74 @@ unlock_adb() {
 start_service() {
     logger -t rayhunter "Waiting for modem to be ready..."
 
-    # Wait for ttyUSB devices to appear (modem may take time after boot)
-    local retries=30
-    local at_port=""
-    while [ $retries -gt 0 ]; do
-        at_port=$(find_at_port 2>/dev/null) && break
-        retries=$((retries - 1))
-        sleep 2
-    done
-
-    if [ -z "$at_port" ]; then
-        logger -t rayhunter "Could not find modem AT port after waiting"
-        return 1
-    fi
-
-    logger -t rayhunter "Found AT port: $at_port"
-    logger -t rayhunter "Unlocking ADB..."
-
-    if ! unlock_adb "$at_port"; then
-        logger -t rayhunter "ADB unlock failed"
-        return 1
-    fi
-
-    logger -t rayhunter "ADB enabled, waiting for device..."
-    sleep 5
-
-    # Wait for ADB device
-    retries=10
+    # First check if ADB is already available (persists across reboots)
+    local retries=15
     while [ $retries -gt 0 ]; do
         if adb devices 2>/dev/null | grep -q "device$"; then
+            logger -t rayhunter "ADB already active, skipping unlock"
             break
         fi
         retries=$((retries - 1))
         sleep 2
     done
 
+    # If ADB not already active, try to unlock it via AT commands
     if ! adb devices 2>/dev/null | grep -q "device$"; then
-        logger -t rayhunter "ADB device did not appear"
-        return 1
+        logger -t rayhunter "ADB not active, attempting unlock..."
+
+        local at_port=""
+        retries=30
+        while [ $retries -gt 0 ]; do
+            at_port=$(find_at_port 2>/dev/null) && break
+            retries=$((retries - 1))
+            sleep 2
+        done
+
+        if [ -z "$at_port" ]; then
+            logger -t rayhunter "Could not find modem AT port after waiting"
+            return 1
+        fi
+
+        logger -t rayhunter "Found AT port: $at_port"
+        sleep 5
+
+        logger -t rayhunter "Unlocking ADB..."
+        if ! unlock_adb "$at_port"; then
+            logger -t rayhunter "ADB unlock failed"
+            return 1
+        fi
+
+        logger -t rayhunter "ADB enabled, waiting for device..."
+        sleep 5
+
+        retries=10
+        while [ $retries -gt 0 ]; do
+            if adb devices 2>/dev/null | grep -q "device$"; then
+                break
+            fi
+            retries=$((retries - 1))
+            sleep 2
+        done
+
+        if ! adb devices 2>/dev/null | grep -q "device$"; then
+            logger -t rayhunter "ADB device did not appear"
+            return 1
+        fi
     fi
 
     # Set up port forwarding
     adb forward tcp:8080 tcp:8080
     logger -t rayhunter "ADB port forwarding active (tcp:8080)"
+
+    # Allow LAN access to the forwarded port (adb forward binds to 127.0.0.1)
+    sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1
+    iptables -t nat -C PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || \
+        iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080
+    logger -t rayhunter "LAN access to port 8080 enabled"
 }
 
 stop_service() {
+    iptables -t nat -D PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || true
     adb forward --remove tcp:8080 2>/dev/null || true
     logger -t rayhunter "Port forwarding removed"
 }

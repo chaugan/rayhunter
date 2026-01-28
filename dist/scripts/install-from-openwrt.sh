@@ -471,7 +471,12 @@ reboot_and_verify() {
 setup_port_forward() {
     log "Setting up ADB port forward (tcp:8080 -> tcp:8080)..."
     adb forward tcp:8080 tcp:8080 || die "Failed to set up port forwarding"
-    log "  Port forwarding active."
+
+    # Allow LAN access to the forwarded port (adb forward binds to 127.0.0.1)
+    sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1
+    iptables -t nat -C PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || \
+        iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080
+    log "  Port forwarding active (LAN accessible)."
 }
 
 # ---------- step 8: install boot persistence ----------
@@ -480,14 +485,21 @@ install_boot_script() {
     local script_dir
     script_dir=$(dirname "$0")
 
+    local boot_script=""
     if [ -f "$script_dir/rayhunter-openwrt-boot" ]; then
+        boot_script="$script_dir/rayhunter-openwrt-boot"
+    elif [ -f "/tmp/rayhunter-openwrt-boot" ]; then
+        boot_script="/tmp/rayhunter-openwrt-boot"
+    fi
+
+    if [ -n "$boot_script" ]; then
         log "Installing OpenWrt boot persistence script..."
-        cp "$script_dir/rayhunter-openwrt-boot" /etc/init.d/rayhunter-openwrt-boot
+        cp "$boot_script" /etc/init.d/rayhunter-openwrt-boot
         chmod 755 /etc/init.d/rayhunter-openwrt-boot
         /etc/init.d/rayhunter-openwrt-boot enable
         log "  Boot script installed and enabled."
     else
-        log "NOTE: rayhunter-openwrt-boot not found alongside this script."
+        log "NOTE: rayhunter-openwrt-boot not found in $script_dir or /tmp/."
         log "  ADB unlock and port forwarding will not persist across router reboots."
         log "  Copy rayhunter-openwrt-boot to /etc/init.d/ manually if needed."
     fi
@@ -510,9 +522,9 @@ main() {
     unlock_adb
     wait_for_adb
     push_files
+    install_boot_script
     reboot_and_verify
     setup_port_forward
-    install_boot_script
 
     echo
     echo "============================================"

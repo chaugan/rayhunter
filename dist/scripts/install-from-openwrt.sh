@@ -74,11 +74,11 @@ check_prerequisites() {
     local pkg_dir="/tmp/rayhunter-packages"
 
     if ! command -v adb > /dev/null 2>&1; then
-        log "adb not found, installing android-tools..."
-        if ls "$pkg_dir"/android-tools*.ipk 1>/dev/null 2>&1; then
+        log "adb not found, installing adb..."
+        if ls "$pkg_dir"/adb*.ipk 1>/dev/null 2>&1; then
             opkg install "$pkg_dir"/*.ipk 2>/dev/null || true
         else
-            opkg update && opkg install android-tools || die "Failed to install android-tools. Transfer .ipk packages to $pkg_dir or provide internet access."
+            opkg update && opkg install adb || die "Failed to install adb. Transfer .ipk packages to $pkg_dir or provide internet access."
         fi
         command -v adb > /dev/null 2>&1 || die "adb still not available after package install."
     fi

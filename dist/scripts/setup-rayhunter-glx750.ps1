@@ -46,7 +46,10 @@ $OpenWrtBaseURL = "https://downloads.openwrt.org/releases/$OpenWrtVersion"
 $PackageRepos = @(
     "$OpenWrtBaseURL/packages/$Arch/packages",
     "$OpenWrtBaseURL/packages/$Arch/base",
-    "$OpenWrtBaseURL/targets/ath79/nand/packages"
+    "$OpenWrtBaseURL/targets/ath79/nand/packages",
+    "https://fw.gl-inet.com/releases/v${OpenWrtVersion}/kmod-4.3.2/x750",
+    "https://fw.gl-inet.com/releases/v${OpenWrtVersion}/packages-4.2/ath79/packages",
+    "https://fw.gl-inet.com/releases/v${OpenWrtVersion}/packages-4.2/ath79/glinet"
 )
 
 $RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot")
@@ -196,11 +199,13 @@ Write-Step "Downloading OpenWrt package manifests for $Arch ($OpenWrtVersion)...
 
 $allPackages = @{}
 
+$repoIndex = 0
 foreach ($repo in $PackageRepos) {
+    $repoIndex++
     $repoName = ($repo -split "/")[-1]
     $manifestURL = "$repo/Packages.gz"
-    $manifestGz = Join-Path $PkgDir "Packages_${repoName}.gz"
-    $manifestTxt = Join-Path $PkgDir "Packages_${repoName}.txt"
+    $manifestGz = Join-Path $PkgDir "Packages_${repoIndex}_${repoName}.gz"
+    $manifestTxt = Join-Path $PkgDir "Packages_${repoIndex}_${repoName}.txt"
 
     Write-Host "  Fetching manifest from $repoName..."
     try {

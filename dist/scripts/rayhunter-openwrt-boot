@@ -83,9 +83,10 @@ unlock_adb() {
         return 1
     fi
 
-    # Enable ADB
+    # Enable ADB - modem may re-enumerate USB immediately, dropping serial
+    # before response arrives, so empty response is OK.
     resp=$(send_at "$at_port" "AT+QCFG=\"usbcfg\",$EP06_VID,$EP06_PID,1,1,1,1,1,1,0" 3)
-    if ! echo "$resp" | grep -q "OK"; then
+    if echo "$resp" | grep -q "ERROR"; then
         logger -t rayhunter "Failed to enable ADB via usbcfg"
         return 1
     fi

@@ -172,12 +172,14 @@ unlock_adb() {
     log "  ADB key accepted."
 
     # Enable ADB via USB config (EP06 PID 0x0306)
+    # The modem may re-enumerate USB immediately, dropping the serial port
+    # before we can read the response - an empty response is expected.
     resp=$(send_at "$AT_PORT" "AT+QCFG=\"usbcfg\",$EP06_VID,$EP06_PID,1,1,1,1,1,1,0" 3)
-    if ! echo "$resp" | grep -q "OK"; then
+    if echo "$resp" | grep -q "ERROR"; then
         die "Failed to enable ADB. Response: $resp"
     fi
-    log "  ADB enabled, waiting for USB re-enumeration..."
-    sleep 5
+    log "  ADB enable command sent, waiting for USB re-enumeration..."
+    sleep 10
 }
 
 # ---------- step 4: connect via ADB ----------

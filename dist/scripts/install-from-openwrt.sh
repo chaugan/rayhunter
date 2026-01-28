@@ -71,16 +71,26 @@ send_at() {
 check_prerequisites() {
     log "Checking prerequisites..."
 
+    local pkg_dir="/tmp/rayhunter-packages"
+
     if ! command -v adb > /dev/null 2>&1; then
         log "adb not found, installing android-tools..."
-        opkg update
-        opkg install android-tools || die "Failed to install android-tools. You may need to install it manually."
+        if ls "$pkg_dir"/android-tools*.ipk 1>/dev/null 2>&1; then
+            opkg install "$pkg_dir"/*.ipk 2>/dev/null || true
+        else
+            opkg update && opkg install android-tools || die "Failed to install android-tools. Transfer .ipk packages to $pkg_dir or provide internet access."
+        fi
+        command -v adb > /dev/null 2>&1 || die "adb still not available after package install."
     fi
 
     if ! command -v openssl > /dev/null 2>&1; then
         log "openssl not found, installing openssl-util..."
-        opkg update 2>/dev/null || true
-        opkg install openssl-util || die "Failed to install openssl-util. You may need to install it manually."
+        if ls "$pkg_dir"/openssl-util*.ipk 1>/dev/null 2>&1; then
+            opkg install "$pkg_dir"/*.ipk 2>/dev/null || true
+        else
+            opkg update 2>/dev/null && opkg install openssl-util || die "Failed to install openssl-util. Transfer .ipk packages to $pkg_dir or provide internet access."
+        fi
+        command -v openssl > /dev/null 2>&1 || die "openssl still not available after package install."
     fi
 
     log "Prerequisites satisfied."

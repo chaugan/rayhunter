@@ -201,19 +201,30 @@ wait_for_adb() {
 # ---------- step 5: push files ----------
 
 get_rayhunter_binary() {
+    # Use explicitly provided path
     if [ -n "$RAYHUNTER_BINARY" ] && [ -f "$RAYHUNTER_BINARY" ]; then
         log "Using provided binary: $RAYHUNTER_BINARY"
         return 0
     fi
 
-    log "Downloading rayhunter-daemon from GitHub releases..."
+    # Check common local locations (e.g. transferred by setup script)
+    for candidate in /tmp/rayhunter-daemon "$(dirname "$0")/rayhunter-daemon"; do
+        if [ -f "$candidate" ] && [ -s "$candidate" ]; then
+            RAYHUNTER_BINARY="$candidate"
+            log "Found local binary: $RAYHUNTER_BINARY"
+            return 0
+        fi
+    done
+
+    # Fall back to downloading
+    log "No local binary found, downloading from GitHub releases..."
     RAYHUNTER_BINARY="/tmp/rayhunter-daemon"
     if command -v curl > /dev/null 2>&1; then
         curl -L -o "$RAYHUNTER_BINARY" "$RAYHUNTER_RELEASE_URL" || die "Download failed"
     elif command -v wget > /dev/null 2>&1; then
         wget -O "$RAYHUNTER_BINARY" "$RAYHUNTER_RELEASE_URL" || die "Download failed"
     else
-        die "Neither curl nor wget available. Please provide the binary path as an argument."
+        die "rayhunter-daemon binary not found. Transfer it to /tmp/ or provide the path as an argument."
     fi
 
     [ -s "$RAYHUNTER_BINARY" ] || die "Downloaded binary is empty"

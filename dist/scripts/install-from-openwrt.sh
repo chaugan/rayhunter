@@ -518,6 +518,7 @@ install_boot_script() {
     fi
 
     # Install notification and SD sync helper scripts
+    mkdir -p /usr/local/bin
     for helper in rayhunter-notify.sh rayhunter-sync-sd.sh; do
         local helper_path=""
         if [ -f "$script_dir/$helper" ]; then

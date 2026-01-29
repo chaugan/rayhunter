@@ -92,6 +92,72 @@ unlock_adb() {
     return 0
 }
 
+setup_cellular() {
+    # Establish the QMI cellular data connection on wwan0.
+    # The ADB-enabled USB config keeps rmnet (QMI) active, but OpenWrt's
+    # built-in modem manager may not recognize the reconfigured device,
+    # so we set it up manually via uqmi.
+
+    if ! command -v uqmi >/dev/null 2>&1; then
+        logger -t rayhunter "uqmi not found, skipping cellular setup"
+        return
+    fi
+
+    local qmi_dev="/dev/cdc-wdm0"
+    [ -e "$qmi_dev" ] || { logger -t rayhunter "QMI device $qmi_dev not found"; return; }
+
+    # Start the data connection (try empty APN first, then common APNs)
+    local handle=""
+    for apn in "" "internet"; do
+        handle=$(uqmi -d "$qmi_dev" --start-network --apn "$apn" --autoconnect 2>/dev/null)
+        if [ -n "$handle" ] && echo "$handle" | grep -q "^[0-9]"; then
+            logger -t rayhunter "QMI data connection started (apn='$apn', handle=$handle)"
+            break
+        fi
+    done
+
+    # Get assigned IP settings
+    local settings
+    settings=$(uqmi -d "$qmi_dev" --get-current-settings 2>/dev/null)
+    if [ -z "$settings" ]; then
+        logger -t rayhunter "Could not get QMI IP settings"
+        return
+    fi
+
+    # Parse IP settings from JSON using sed (no jq on OpenWrt by default)
+    local ip gw mask dns1 dns2
+    ip=$(echo "$settings" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    gw=$(echo "$settings" | sed -n 's/.*"gateway"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    mask=$(echo "$settings" | sed -n 's/.*"subnet"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    dns1=$(echo "$settings" | sed -n 's/.*"dns1"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    dns2=$(echo "$settings" | sed -n 's/.*"dns2"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+    if [ -z "$ip" ] || [ -z "$gw" ]; then
+        logger -t rayhunter "Could not parse QMI IP settings"
+        return
+    fi
+
+    # Configure wwan0 with raw-ip mode (required for QMI on Quectel modems)
+    ifconfig wwan0 down 2>/dev/null
+    echo Y > /sys/class/net/wwan0/qmi/raw_ip 2>/dev/null
+    ifconfig wwan0 "$ip" netmask "${mask:-255.255.255.252}" up
+
+    # Add default route if none exists
+    if ! ip route | grep -q "^default"; then
+        ip route add default via "$gw" dev wwan0
+    fi
+
+    # Configure DNS
+    if [ -n "$dns1" ]; then
+        echo "nameserver $dns1" >> /etc/resolv.conf
+    fi
+    if [ -n "$dns2" ]; then
+        echo "nameserver $dns2" >> /etc/resolv.conf
+    fi
+
+    logger -t rayhunter "Cellular data active: ip=$ip gw=$gw dns=$dns1,$dns2"
+}
+
 start() {
     logger -t rayhunter "Waiting for modem to be ready..."
 
@@ -150,6 +216,9 @@ start() {
         fi
     fi
 
+    # Set up cellular data connection (QMI)
+    setup_cellular
+
     # Set up port forwarding
     adb forward tcp:8080 tcp:8080
     logger -t rayhunter "ADB port forwarding active (tcp:8080)"
@@ -166,7 +235,13 @@ start() {
         local ntfy_url=""
         local api_retries=10
         while [ $api_retries -gt 0 ]; do
-            ntfy_url=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null | \
+            local config_json=""
+            if command -v curl >/dev/null 2>&1; then
+                config_json=$(curl -s --max-time 5 http://127.0.0.1:8080/api/config 2>/dev/null)
+            else
+                config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
+            fi
+            ntfy_url=$(echo "$config_json" | \
                 sed -n 's/.*"ntfy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
             [ -n "$ntfy_url" ] && break
             api_retries=$((api_retries - 1))
@@ -202,5 +277,10 @@ stop() {
 
     iptables -t nat -D PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || true
     adb forward --remove tcp:8080 2>/dev/null || true
-    logger -t rayhunter "Port forwarding removed"
+
+    # Tear down cellular
+    ifconfig wwan0 down 2>/dev/null
+    ip route del default dev wwan0 2>/dev/null || true
+
+    logger -t rayhunter "Port forwarding and cellular removed"
 }

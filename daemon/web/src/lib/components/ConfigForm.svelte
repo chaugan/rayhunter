@@ -49,7 +49,7 @@
             testMessage = '';
             testMessageType = null;
             await test_notification();
-            testMessage = 'Test notification sent successfully!';
+            testMessage = 'Test warning injected! If the notification monitor is running, you should receive an ntfy alert shortly.';
             testMessageType = 'success';
         } catch (error) {
             testMessage = `${error}`;
@@ -157,7 +157,7 @@
                             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-rayhunter-blue"
                         />
                         <p class="text-xs text-gray-500 mt-1">
-                            Test button below uses the saved configuration URL, not the input above
+                            Notifications are sent by the router-side monitor script (rayhunter-notify.sh)
                         </p>
                     </div>
 

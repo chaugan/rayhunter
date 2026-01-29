@@ -88,7 +88,7 @@ export async function set_config(config: Config): Promise<void> {
 }
 
 export async function test_notification(): Promise<void> {
-    const response = await fetch('/api/test-notification', {
+    const response = await fetch('/api/test-warning', {
         method: 'POST',
     });
 

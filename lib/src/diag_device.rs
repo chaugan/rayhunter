@@ -140,11 +140,15 @@ impl DiagDevice {
         enable_frame_readwrite(fd, MEMORY_DEVICE_MODE, configured_device)?;
         let use_mdm = determine_use_mdm(fd)?;
 
-        Ok(DiagDevice {
+        let mut dev = DiagDevice {
             read_buf: vec![0; BUFFER_LEN],
             file: diag_file,
             use_mdm,
-        })
+        };
+        // Flush any stale data left over from a previous session, e.g. after
+        // an in-process restart triggered by "apply and reboot" in the UI.
+        dev.drain();
+        Ok(dev)
     }
 
     pub fn as_stream(
@@ -229,19 +233,43 @@ impl DiagDevice {
         }
     }
 
-    /// Drain any pending stale data from the diag device.
-    /// This should be called before re-initializing the device after a restart
-    /// to prevent read_response from seeing leftover data from a previous session.
-    pub async fn drain(&mut self) {
-        let drain_timeout = Duration::from_millis(100);
+    /// Drain any pending stale data from the diag device using non-blocking I/O.
+    ///
+    /// tokio::fs::File delegates reads to a blocking threadpool, so
+    /// tokio::time::timeout cannot interrupt a kernel read(2) that blocks
+    /// forever on /dev/diag. Instead we temporarily set O_NONBLOCK via fcntl,
+    /// read until EAGAIN, then restore blocking mode for normal operation.
+    pub fn drain(&mut self) {
+        let fd = self.file.as_raw_fd();
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            debug!("drain: fcntl F_GETFL failed, skipping");
+            return;
+        }
+
+        // Set O_NONBLOCK
+        if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            debug!("drain: fcntl F_SETFL O_NONBLOCK failed, skipping");
+            return;
+        }
+
+        let mut total: usize = 0;
+        let mut buf = [0u8; 65536];
         loop {
-            match tokio::time::timeout(drain_timeout, self.file.read(&mut self.read_buf)).await {
-                Ok(Ok(n)) if n > 0 => {
-                    debug!("drained {n} bytes of stale data from /dev/diag");
-                    continue;
-                }
-                _ => break,
+            let n = unsafe {
+                libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+            };
+            if n <= 0 {
+                break;
             }
+            total += n as usize;
+        }
+
+        // Restore original flags (blocking mode)
+        unsafe { libc::fcntl(fd, libc::F_SETFL, flags) };
+
+        if total > 0 {
+            info!("drained {total} bytes of stale data from /dev/diag");
         }
         debug!("diag device drain complete");
     }

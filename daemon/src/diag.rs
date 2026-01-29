@@ -308,7 +308,7 @@ pub fn run_diag_read_thread(
         // Drain stale data before the device is dropped, so the next
         // session doesn't see leftover responses from this one.
         info!("Draining stale data from diag device...");
-        dev.drain().await;
+        dev.drain();
         result
     });
 }

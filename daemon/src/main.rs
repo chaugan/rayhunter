@@ -214,9 +214,23 @@ async fn run_with_config(
         let mut dev = DiagDevice::new(&config.device)
             .await
             .map_err(RayhunterError::DiagInitError)?;
-        dev.config_logs()
-            .await
-            .map_err(RayhunterError::DiagInitError)?;
+
+        // config_logs may fail on restart if /dev/diag still has stale state.
+        // Retry a few times with increasing delays to let the driver settle.
+        let mut config_attempts = 0;
+        loop {
+            match dev.config_logs().await {
+                Ok(()) => break,
+                Err(e) => {
+                    config_attempts += 1;
+                    if config_attempts >= 3 {
+                        return Err(RayhunterError::DiagInitError(e));
+                    }
+                    error!("config_logs failed (attempt {config_attempts}/3): {e}, retrying...");
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            }
+        }
 
         info!("Starting Diag Thread");
         run_diag_read_thread(
@@ -300,8 +314,8 @@ async fn run_with_config(
     // Give the kernel time to clean up /dev/diag state between iterations,
     // preventing stale data from causing hangs on restart.
     if restart_token.is_cancelled() {
-        info!("restarting in 500ms...");
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        info!("restarting in 2s...");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
     info!("see you space cowboy...");

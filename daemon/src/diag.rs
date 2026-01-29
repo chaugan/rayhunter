@@ -304,11 +304,11 @@ pub fn run_diag_read_thread(
                 }
             }
         };
-        // diag_stream is dropped here, releasing the borrow on dev
-        // Drain stale data before the device is dropped, so the next
-        // session doesn't see leftover responses from this one.
-        info!("Draining stale data from diag device...");
-        dev.drain();
+        // diag_stream is dropped here, releasing the borrow on dev.
+        // Explicitly drop dev to close /dev/diag fd before the task ends,
+        // so the kernel driver resets its state before the next session opens it.
+        info!("Closing diag device...");
+        drop(dev);
         result
     });
 }

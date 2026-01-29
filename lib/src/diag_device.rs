@@ -140,15 +140,11 @@ impl DiagDevice {
         enable_frame_readwrite(fd, MEMORY_DEVICE_MODE, configured_device)?;
         let use_mdm = determine_use_mdm(fd)?;
 
-        let mut dev = DiagDevice {
+        Ok(DiagDevice {
             read_buf: vec![0; BUFFER_LEN],
             file: diag_file,
             use_mdm,
-        };
-        // Flush any stale data left over from a previous session, e.g. after
-        // an in-process restart triggered by "apply and reboot" in the UI.
-        dev.drain();
-        Ok(dev)
+        })
     }
 
     pub fn as_stream(

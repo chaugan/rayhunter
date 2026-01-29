@@ -124,13 +124,22 @@ setup_cellular() {
         return
     fi
 
-    # Parse IP settings from JSON using sed (no jq on OpenWrt by default)
+    # Parse IP settings from JSON using jsonfilter (built into OpenWrt)
     local ip gw mask dns1 dns2
-    ip=$(echo "$settings" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    gw=$(echo "$settings" | sed -n 's/.*"gateway"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    mask=$(echo "$settings" | sed -n 's/.*"subnet"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    dns1=$(echo "$settings" | sed -n 's/.*"dns1"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    dns2=$(echo "$settings" | sed -n 's/.*"dns2"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    if command -v jsonfilter >/dev/null 2>&1; then
+        ip=$(echo "$settings" | jsonfilter -e '@.ipv4.ip')
+        gw=$(echo "$settings" | jsonfilter -e '@.ipv4.gateway')
+        mask=$(echo "$settings" | jsonfilter -e '@.ipv4.subnet')
+        dns1=$(echo "$settings" | jsonfilter -e '@.ipv4.dns1')
+        dns2=$(echo "$settings" | jsonfilter -e '@.ipv4.dns2')
+    else
+        # Fallback: grep for quoted values line-by-line
+        ip=$(echo "$settings" | grep '"ip"' | grep -o '[0-9.]*')
+        gw=$(echo "$settings" | grep '"gateway"' | grep -o '[0-9.]*')
+        mask=$(echo "$settings" | grep '"subnet"' | grep -o '[0-9.]*')
+        dns1=$(echo "$settings" | grep '"dns1"' | grep -o '[0-9.]*')
+        dns2=$(echo "$settings" | grep '"dns2"' | grep -o '[0-9.]*')
+    fi
 
     if [ -z "$ip" ] || [ -z "$gw" ]; then
         logger -t rayhunter "Could not parse QMI IP settings"
@@ -241,8 +250,11 @@ start() {
             else
                 config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
             fi
-            ntfy_url=$(echo "$config_json" | \
-                sed -n 's/.*"ntfy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            if command -v jsonfilter >/dev/null 2>&1; then
+                ntfy_url=$(echo "$config_json" | jsonfilter -e '@.ntfy_url' 2>/dev/null)
+            else
+                ntfy_url=$(echo "$config_json" | grep '"ntfy_url"' | grep -o 'https*://[^"]*')
+            fi
             [ -n "$ntfy_url" ] && break
             api_retries=$((api_retries - 1))
             sleep 5

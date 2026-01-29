@@ -207,13 +207,43 @@ impl DiagDevice {
     }
 
     async fn read_response(&mut self) -> DiagResult<Vec<Result<Message, DiagParsingError>>> {
+        let timeout_duration = Duration::from_secs(5);
         loop {
-            let container = self.get_next_messages_container().await?;
+            let container = match tokio::time::timeout(
+                timeout_duration,
+                self.get_next_messages_container(),
+            )
+            .await
+            {
+                Ok(result) => result?,
+                Err(_) => {
+                    return Err(DiagDeviceError::NoResponse(Request::LogConfig(
+                        LogConfigRequest::RetrieveIdRanges,
+                    )));
+                }
+            };
             if container.data_type != DataType::UserSpace {
                 continue;
             }
             return Ok(container.into_messages());
         }
+    }
+
+    /// Drain any pending stale data from the diag device.
+    /// This should be called before re-initializing the device after a restart
+    /// to prevent read_response from seeing leftover data from a previous session.
+    pub async fn drain(&mut self) {
+        let drain_timeout = Duration::from_millis(100);
+        loop {
+            match tokio::time::timeout(drain_timeout, self.file.read(&mut self.read_buf)).await {
+                Ok(Ok(n)) if n > 0 => {
+                    debug!("drained {n} bytes of stale data from /dev/diag");
+                    continue;
+                }
+                _ => break,
+            }
+        }
+        debug!("diag device drain complete");
     }
 
     async fn retrieve_id_ranges(&mut self) -> DiagResult<[u32; 16]> {

@@ -13,8 +13,6 @@
 START=99
 STOP=10
 
-USE_PROCD=1
-
 EP06_VID="0x2C7C"
 EP06_PID="0x0306"
 
@@ -94,7 +92,7 @@ unlock_adb() {
     return 0
 }
 
-start_service() {
+start() {
     logger -t rayhunter "Waiting for modem to be ready..."
 
     # First check if ADB is already available (persists across reboots)
@@ -158,12 +156,50 @@ start_service() {
 
     # Allow LAN access to the forwarded port (adb forward binds to 127.0.0.1)
     sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1
-    iptables -t nat -C PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || \
+    iptables -t nat -C PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 >/dev/null 2>&1 || \
         iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080
     logger -t rayhunter "LAN access to port 8080 enabled"
+
+    # Start notification monitor if script and config exist
+    if [ -x /usr/local/bin/rayhunter-notify.sh ]; then
+        # Read ntfy URL from modem's config via API (wait for daemon to start)
+        local ntfy_url=""
+        local api_retries=10
+        while [ $api_retries -gt 0 ]; do
+            ntfy_url=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null | \
+                sed -n 's/.*"ntfy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            [ -n "$ntfy_url" ] && break
+            api_retries=$((api_retries - 1))
+            sleep 5
+        done
+
+        if [ -n "$ntfy_url" ]; then
+            /usr/local/bin/rayhunter-notify.sh "$ntfy_url" 30 &
+            logger -t rayhunter "Notification monitor started (ntfy=$ntfy_url)"
+        else
+            logger -t rayhunter "No ntfy_url configured, notification monitor not started"
+        fi
+    fi
+
+    # Set up SD card sync cron job if script exists
+    if [ -x /usr/local/bin/rayhunter-sync-sd.sh ]; then
+        # Add cron entry if not already present
+        if ! crontab -l 2>/dev/null | grep -q "rayhunter-sync-sd"; then
+            (crontab -l 2>/dev/null; echo "*/5 * * * * /usr/local/bin/rayhunter-sync-sd.sh") | crontab -
+            logger -t rayhunter "SD card sync cron job installed (every 5 minutes)"
+        fi
+    fi
 }
 
-stop_service() {
+stop() {
+    # Stop notification monitor
+    killall rayhunter-notify.sh 2>/dev/null || true
+
+    # Remove SD sync cron entry
+    if crontab -l 2>/dev/null | grep -q "rayhunter-sync-sd"; then
+        crontab -l 2>/dev/null | grep -v "rayhunter-sync-sd" | crontab -
+    fi
+
     iptables -t nat -D PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080 2>/dev/null || true
     adb forward --remove tcp:8080 2>/dev/null || true
     logger -t rayhunter "Port forwarding removed"

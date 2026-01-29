@@ -246,61 +246,70 @@ pub fn run_diag_read_thread(
     notification_channel: tokio::sync::mpsc::Sender<Notification>,
 ) {
     task_tracker.spawn(async move {
-        let mut diag_stream = pin!(dev.as_stream().into_stream());
         let mut diag_task = DiagTask::new(ui_update_sender, analysis_sender, analyzer_config, notification_channel);
         qmdl_file_tx
             .send(DiagDeviceCtrlMessage::StartRecording)
             .await
             .unwrap();
-        loop {
-            tokio::select! {
-                msg = qmdl_file_rx.recv() => {
-                    match msg {
-                        Some(DiagDeviceCtrlMessage::StartRecording) => {
-                            let mut qmdl_store = qmdl_store_lock.write().await;
-                            diag_task.start(qmdl_store.deref_mut()).await;
-                        },
-                        Some(DiagDeviceCtrlMessage::StopRecording) => {
-                            let mut qmdl_store = qmdl_store_lock.write().await;
-                            diag_task.stop(qmdl_store.deref_mut()).await;
-                        },
-                        // None means all the Senders have been dropped, so it's
-                        // time to go
-                        Some(DiagDeviceCtrlMessage::Exit) | None => {
-                            info!("Diag reader thread exiting...");
-                            diag_task.stop_current_recording().await;
-                            return Ok(())
-                        },
-                        Some(DiagDeviceCtrlMessage::DeleteEntry { name, response_tx }) => {
-                            let mut qmdl_store = qmdl_store_lock.write().await;
-                            let resp = diag_task.delete_entry(qmdl_store.deref_mut(), name.as_str()).await;
-                            if response_tx.send(resp).is_err() {
-                                error!("Failed to send delete entry respons, receiver dropped");
-                            }
-                        },
-                        Some(DiagDeviceCtrlMessage::DeleteAllEntries { response_tx }) => {
-                            let mut qmdl_store = qmdl_store_lock.write().await;
-                            let resp = diag_task.delete_all_entries(qmdl_store.deref_mut()).await;
-                            if response_tx.send(resp).is_err() {
-                                error!("Failed to send delete all entries respons, receiver dropped");
-                            }
-                        },
+
+        let result = {
+            let mut diag_stream = pin!(dev.as_stream().into_stream());
+            loop {
+                tokio::select! {
+                    msg = qmdl_file_rx.recv() => {
+                        match msg {
+                            Some(DiagDeviceCtrlMessage::StartRecording) => {
+                                let mut qmdl_store = qmdl_store_lock.write().await;
+                                diag_task.start(qmdl_store.deref_mut()).await;
+                            },
+                            Some(DiagDeviceCtrlMessage::StopRecording) => {
+                                let mut qmdl_store = qmdl_store_lock.write().await;
+                                diag_task.stop(qmdl_store.deref_mut()).await;
+                            },
+                            // None means all the Senders have been dropped, so it's
+                            // time to go
+                            Some(DiagDeviceCtrlMessage::Exit) | None => {
+                                info!("Diag reader thread exiting...");
+                                diag_task.stop_current_recording().await;
+                                break Ok(());
+                            },
+                            Some(DiagDeviceCtrlMessage::DeleteEntry { name, response_tx }) => {
+                                let mut qmdl_store = qmdl_store_lock.write().await;
+                                let resp = diag_task.delete_entry(qmdl_store.deref_mut(), name.as_str()).await;
+                                if response_tx.send(resp).is_err() {
+                                    error!("Failed to send delete entry respons, receiver dropped");
+                                }
+                            },
+                            Some(DiagDeviceCtrlMessage::DeleteAllEntries { response_tx }) => {
+                                let mut qmdl_store = qmdl_store_lock.write().await;
+                                let resp = diag_task.delete_all_entries(qmdl_store.deref_mut()).await;
+                                if response_tx.send(resp).is_err() {
+                                    error!("Failed to send delete all entries respons, receiver dropped");
+                                }
+                            },
+                        }
                     }
-                }
-                maybe_container = diag_stream.next() => {
-                    match maybe_container.unwrap() {
-                        Ok(container) => {
-                            let mut qmdl_store = qmdl_store_lock.write().await;
-                            diag_task.process_container(qmdl_store.deref_mut(), container).await
-                        },
-                        Err(err) => {
-                            error!("error reading diag device: {err}");
-                            return Err(err);
+                    maybe_container = diag_stream.next() => {
+                        match maybe_container.unwrap() {
+                            Ok(container) => {
+                                let mut qmdl_store = qmdl_store_lock.write().await;
+                                diag_task.process_container(qmdl_store.deref_mut(), container).await
+                            },
+                            Err(err) => {
+                                error!("error reading diag device: {err}");
+                                break Err(err);
+                            }
                         }
                     }
                 }
             }
-        }
+        };
+        // diag_stream is dropped here, releasing the borrow on dev
+        // Drain stale data before the device is dropped, so the next
+        // session doesn't see leftover responses from this one.
+        info!("Draining stale data from diag device...");
+        dev.drain().await;
+        result
     });
 }
 

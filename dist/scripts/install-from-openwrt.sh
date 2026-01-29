@@ -507,7 +507,7 @@ install_boot_script() {
 
     if [ -n "$boot_script" ]; then
         log "Installing OpenWrt boot persistence script..."
-        cp "$boot_script" /etc/init.d/rayhunter-openwrt-boot
+        sed 's/\r$//' "$boot_script" > /etc/init.d/rayhunter-openwrt-boot
         chmod 755 /etc/init.d/rayhunter-openwrt-boot
         /etc/init.d/rayhunter-openwrt-boot enable
         log "  Boot script installed and enabled."
@@ -516,6 +516,23 @@ install_boot_script() {
         log "  ADB unlock and port forwarding will not persist across router reboots."
         log "  Copy rayhunter-openwrt-boot to /etc/init.d/ manually if needed."
     fi
+
+    # Install notification and SD sync helper scripts
+    for helper in rayhunter-notify.sh rayhunter-sync-sd.sh; do
+        local helper_path=""
+        if [ -f "$script_dir/$helper" ]; then
+            helper_path="$script_dir/$helper"
+        elif [ -f "/tmp/$helper" ]; then
+            helper_path="/tmp/$helper"
+        fi
+
+        if [ -n "$helper_path" ]; then
+            log "Installing $helper..."
+            sed 's/\r$//' "$helper_path" > "/usr/local/bin/$helper"
+            chmod 755 "/usr/local/bin/$helper"
+            log "  $helper installed."
+        fi
+    done
 }
 
 # ---------- main ----------

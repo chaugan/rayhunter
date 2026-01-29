@@ -297,6 +297,13 @@ async fn run_with_config(
     task_tracker.close();
     task_tracker.wait().await;
 
+    // Give the kernel time to clean up /dev/diag state between iterations,
+    // preventing stale data from causing hangs on restart.
+    if restart_token.is_cancelled() {
+        info!("restarting in 500ms...");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
     info!("see you space cowboy...");
     Ok(restart_token.is_cancelled())
 }

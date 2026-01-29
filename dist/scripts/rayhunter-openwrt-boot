@@ -238,34 +238,37 @@ start() {
         iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 127.0.0.1:8080
     logger -t rayhunter "LAN access to port 8080 enabled"
 
-    # Start notification monitor if script and config exist
+    # Start notification monitor in the background so it doesn't block boot.
+    # It will wait for the daemon API to become available and read the ntfy URL.
     if [ -x /usr/local/bin/rayhunter-notify.sh ]; then
-        # Read ntfy URL from modem's config via API (wait for daemon to start)
-        local ntfy_url=""
-        local api_retries=10
-        while [ $api_retries -gt 0 ]; do
-            local config_json=""
-            if command -v curl >/dev/null 2>&1; then
-                config_json=$(curl -s --max-time 5 http://127.0.0.1:8080/api/config 2>/dev/null)
-            else
-                config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
-            fi
-            if command -v jsonfilter >/dev/null 2>&1; then
-                ntfy_url=$(echo "$config_json" | jsonfilter -e '@.ntfy_url' 2>/dev/null)
-            else
-                ntfy_url=$(echo "$config_json" | grep '"ntfy_url"' | grep -o 'https*://[^"]*')
-            fi
-            [ -n "$ntfy_url" ] && break
-            api_retries=$((api_retries - 1))
-            sleep 5
-        done
+        (
+            # Wait for daemon API to become available
+            ntfy_url=""
+            api_retries=10
+            while [ $api_retries -gt 0 ]; do
+                config_json=""
+                if command -v curl >/dev/null 2>&1; then
+                    config_json=$(curl -s --max-time 5 http://127.0.0.1:8080/api/config 2>/dev/null)
+                else
+                    config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
+                fi
+                if [ -n "$config_json" ] && command -v jsonfilter >/dev/null 2>&1; then
+                    ntfy_url=$(echo "$config_json" | jsonfilter -e '@.ntfy_url' 2>/dev/null)
+                elif [ -n "$config_json" ]; then
+                    ntfy_url=$(echo "$config_json" | grep '"ntfy_url"' | grep -o 'https*://[^"]*')
+                fi
+                [ -n "$ntfy_url" ] && break
+                api_retries=$((api_retries - 1))
+                sleep 5
+            done
 
-        if [ -n "$ntfy_url" ]; then
-            /usr/local/bin/rayhunter-notify.sh "$ntfy_url" 30 &
-            logger -t rayhunter "Notification monitor started (ntfy=$ntfy_url)"
-        else
-            logger -t rayhunter "No ntfy_url configured, notification monitor not started"
-        fi
+            if [ -n "$ntfy_url" ]; then
+                logger -t rayhunter "Notification monitor starting (ntfy=$ntfy_url)"
+                exec /usr/local/bin/rayhunter-notify.sh "$ntfy_url" 30
+            else
+                logger -t rayhunter "No ntfy_url configured, notification monitor not started"
+            fi
+        ) &
     fi
 
     # Set up SD card sync cron job if script exists

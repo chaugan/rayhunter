@@ -67,7 +67,8 @@ while true; do
 
     if [ -n "$report" ]; then
         # Count lines containing "Warning" or "Critical" severity
-        warning_count=$(echo "$report" | grep -c -i '"Warning"\|"Critical"' 2>/dev/null || echo 0)
+        warning_count=$(echo "$report" | grep -i -e '"Warning"' -e '"Critical"' 2>/dev/null | wc -l)
+        warning_count=$((warning_count + 0))
 
         if [ "$warning_count" -gt "$last_warning_count" ]; then
             new_warnings=$((warning_count - last_warning_count))

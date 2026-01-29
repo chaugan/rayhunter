@@ -268,6 +268,20 @@ impl RecordingStore {
             .map_err(RecordingStoreError::ReadFileError)
     }
 
+    pub async fn open_entry_analysis_append(
+        &self,
+        entry_index: usize,
+    ) -> Result<File, RecordingStoreError> {
+        let entry = &self.manifest.entries[entry_index];
+        let file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(entry.get_analysis_filepath(&self.path))
+            .await
+            .map_err(RecordingStoreError::ReadFileError)?;
+        Ok(file)
+    }
+
     pub async fn clear_and_open_entry_analysis(
         &mut self,
         entry_index: usize,

@@ -37,6 +37,7 @@ use diag::{
     DiagDeviceCtrlMessage, delete_all_recordings, delete_recording, get_analysis_report,
     start_recording, stop_recording,
 };
+use server::test_warning;
 use log::{error, info};
 use qmdl_store::RecordingStoreError;
 use rayhunter::Device;
@@ -71,6 +72,7 @@ fn get_router() -> AppRouter {
         .route("/api/config", get(get_config))
         .route("/api/config", post(set_config))
         .route("/api/test-notification", post(test_notification))
+        .route("/api/test-warning", post(test_warning))
         .route("/api/debug/display-state", post(debug_set_display_state))
         .route("/", get(|| async { Redirect::permanent("/index.html") }))
         .route("/{*path}", get(serve_static))

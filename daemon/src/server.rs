@@ -170,6 +170,62 @@ pub async fn test_notification(
         })
 }
 
+/// Inject a fake warning event into the current live analysis file.
+/// This allows testing the router-side notification pipeline (rayhunter-notify.sh)
+/// on devices where the daemon cannot reach the internet directly (e.g. EP06).
+pub async fn test_warning(
+    State(state): State<Arc<ServerState>>,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
+    let qmdl_store = state.qmdl_store_lock.read().await;
+    let (entry_index, _) = qmdl_store.get_current_entry().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "No active recording to inject test warning into".to_string(),
+    ))?;
+
+    let mut analysis_file = qmdl_store
+        .open_entry_analysis_append(entry_index)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to open analysis file: {e}"),
+            )
+        })?;
+
+    let test_row = serde_json::json!({
+        "packet_timestamp": chrono::Utc::now().to_rfc3339(),
+        "skipped_message_reason": null,
+        "events": [{
+            "event_type": "High",
+            "message": "TEST: This is a test warning injected via /api/test-warning"
+        }]
+    });
+    let mut line = serde_json::to_string(&test_row).unwrap();
+    line.push('\n');
+
+    use tokio::io::AsyncWriteExt;
+    analysis_file
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to write test warning: {e}"),
+            )
+        })?;
+    analysis_file.flush().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to flush analysis file: {e}"),
+        )
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        "Test warning injected into live analysis report".to_string(),
+    ))
+}
+
 pub async fn get_zip(
     State(state): State<Arc<ServerState>>,
     Path(entry_name): Path<String>,

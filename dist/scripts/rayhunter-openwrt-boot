@@ -288,8 +288,70 @@ start() {
 
                 logger -t rayhunter "Notification monitor starting (ntfy=$ntfy_url)"
                 exec /usr/local/bin/rayhunter-notify.sh "$ntfy_url" 30
+            fi
+        ) &
+    fi
+
+    # Start command listener in the background (reads ntfy_url from daemon API)
+    if [ -x /usr/local/bin/rayhunter-cmd.sh ]; then
+        (
+            # Wait for daemon API to become available
+            ntfy_url=""
+            api_retries=10
+            while [ $api_retries -gt 0 ]; do
+                config_json=""
+                if command -v curl >/dev/null 2>&1; then
+                    config_json=$(curl -s --max-time 5 http://127.0.0.1:8080/api/config 2>/dev/null)
+                else
+                    config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
+                fi
+                if [ -n "$config_json" ] && command -v jsonfilter >/dev/null 2>&1; then
+                    ntfy_url=$(echo "$config_json" | jsonfilter -e '@.ntfy_url' 2>/dev/null)
+                elif [ -n "$config_json" ]; then
+                    ntfy_url=$(echo "$config_json" | grep '"ntfy_url"' | grep -o 'https*://[^"]*')
+                fi
+                [ -n "$ntfy_url" ] && break
+                api_retries=$((api_retries - 1))
+                sleep 5
+            done
+
+            if [ -n "$ntfy_url" ]; then
+                logger -t rayhunter "Command listener starting (ntfy=$ntfy_url)"
+                exec /usr/local/bin/rayhunter-cmd.sh "$ntfy_url"
             else
-                logger -t rayhunter "No ntfy_url configured, notification monitor not started"
+                logger -t rayhunter "No ntfy_url configured, command listener not started"
+            fi
+        ) &
+    fi
+
+    # Start disk monitor in the background
+    if [ -x /usr/local/bin/rayhunter-disk-monitor.sh ]; then
+        (
+            # Wait for daemon API to become available
+            ntfy_url=""
+            api_retries=10
+            while [ $api_retries -gt 0 ]; do
+                config_json=""
+                if command -v curl >/dev/null 2>&1; then
+                    config_json=$(curl -s --max-time 5 http://127.0.0.1:8080/api/config 2>/dev/null)
+                else
+                    config_json=$(wget -q -O - http://127.0.0.1:8080/api/config 2>/dev/null)
+                fi
+                if [ -n "$config_json" ] && command -v jsonfilter >/dev/null 2>&1; then
+                    ntfy_url=$(echo "$config_json" | jsonfilter -e '@.ntfy_url' 2>/dev/null)
+                elif [ -n "$config_json" ]; then
+                    ntfy_url=$(echo "$config_json" | grep '"ntfy_url"' | grep -o 'https*://[^"]*')
+                fi
+                [ -n "$ntfy_url" ] && break
+                api_retries=$((api_retries - 1))
+                sleep 5
+            done
+
+            if [ -n "$ntfy_url" ]; then
+                logger -t rayhunter "Disk monitor starting (ntfy=$ntfy_url)"
+                exec /usr/local/bin/rayhunter-disk-monitor.sh "$ntfy_url"
+            else
+                logger -t rayhunter "No ntfy_url configured, disk monitor not started"
             fi
         ) &
     fi
@@ -305,8 +367,10 @@ start() {
 }
 
 stop() {
-    # Stop notification monitor
+    # Stop notification monitor, command listener, and disk monitor
     killall rayhunter-notify.sh 2>/dev/null || true
+    killall rayhunter-cmd.sh 2>/dev/null || true
+    killall rayhunter-disk-monitor.sh 2>/dev/null || true
 
     # Stop daemon on modem
     adb shell killall rayhunter-daemon 2>/dev/null || true

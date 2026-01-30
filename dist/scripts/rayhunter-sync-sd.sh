@@ -15,6 +15,27 @@ SD_MOUNT="${1:-/mnt/sda1}"
 REMOTE_DIR="/data/rayhunter/qmdl"
 LOCAL_DIR="$SD_MOUNT/rayhunter"
 LOCK_FILE="/tmp/rayhunter-sync.lock"
+RAYHUNTER_API="http://127.0.0.1:8080"
+
+# --- Helper: fetch a URL and return the body ---
+api_get() {
+    local url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -s --max-time 10 "$url" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O - --timeout=10 "$url" 2>/dev/null
+    fi
+}
+
+# --- Helper: POST to a URL and return the body ---
+api_post() {
+    local url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -s --max-time 10 -X POST "$url" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O - --timeout=10 --post-data="" "$url" 2>/dev/null
+    fi
+}
 
 # Check if SD card is mounted
 if ! mount | grep -q "$SD_MOUNT"; then
@@ -54,6 +75,27 @@ if [ $result -eq 0 ]; then
     pulled=$((pulled + 0))
     if [ "$pulled" -gt 0 ]; then
         logger -t rayhunter-sync "Synced files to $LOCAL_DIR ($output)"
+    fi
+
+    # Clean up synced recordings from modem (except the active one)
+    manifest=$(api_get "$RAYHUNTER_API/api/qmdl-manifest")
+    if [ -n "$manifest" ]; then
+        # Extract entry names from the entries array
+        entry_names=""
+        if command -v jsonfilter >/dev/null 2>&1; then
+            entry_names=$(echo "$manifest" | jsonfilter -e '@.entries[*].name' 2>/dev/null)
+        else
+            # Fallback: extract name fields from entries array
+            entry_names=$(echo "$manifest" | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"//')
+        fi
+
+        if [ -n "$entry_names" ]; then
+            echo "$entry_names" | while IFS= read -r name; do
+                [ -z "$name" ] && continue
+                logger -t rayhunter-sync "Deleting synced recording from modem: $name"
+                api_post "$RAYHUNTER_API/api/delete-recording/$name"
+            done
+        fi
     fi
 else
     logger -t rayhunter-sync "adb pull failed (exit $result): $output"

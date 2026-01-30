@@ -321,6 +321,36 @@
 
                         <div class="flex items-center">
                             <input
+                                id="imsi_exposing_reject"
+                                type="checkbox"
+                                bind:checked={config.analyzers.imsi_exposing_reject}
+                                class="h-4 w-4 text-rayhunter-blue focus:ring-rayhunter-blue border-gray-300 rounded"
+                            />
+                            <label
+                                for="imsi_exposing_reject"
+                                class="ml-2 block text-sm text-gray-700"
+                            >
+                                IMSI-Exposing Reject/Detach Heuristic
+                            </label>
+                        </div>
+
+                        <div class="flex items-center">
+                            <input
+                                id="imsi_exposure_rate"
+                                type="checkbox"
+                                bind:checked={config.analyzers.imsi_exposure_rate}
+                                class="h-4 w-4 text-rayhunter-blue focus:ring-rayhunter-blue border-gray-300 rounded"
+                            />
+                            <label
+                                for="imsi_exposure_rate"
+                                class="ml-2 block text-sm text-gray-700"
+                            >
+                                IMSI Exposure Rate Heuristic
+                            </label>
+                        </div>
+
+                        <div class="flex items-center">
+                            <input
                                 id="test_analyzer"
                                 type="checkbox"
                                 bind:checked={config.analyzers.test_analyzer}

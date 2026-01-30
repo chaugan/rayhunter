@@ -1,5 +1,7 @@
 pub mod analyzer;
 pub mod connection_redirect_downgrade;
+pub mod imsi_exposing_reject;
+pub mod imsi_exposure_rate;
 pub mod imsi_requested;
 pub mod incomplete_sib;
 pub mod information_element;

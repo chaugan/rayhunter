@@ -9,6 +9,8 @@ export interface AnalyzerConfig {
     null_cipher: boolean;
     nas_null_cipher: boolean;
     incomplete_sib: boolean;
+    imsi_exposing_reject: boolean;
+    imsi_exposure_rate: boolean;
     test_analyzer: boolean;
 }
 

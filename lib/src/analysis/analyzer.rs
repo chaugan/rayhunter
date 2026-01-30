@@ -9,10 +9,11 @@ use crate::{diag::MessagesContainer, gsmtap_parser};
 
 use super::{
     connection_redirect_downgrade::ConnectionRedirect2GDowngradeAnalyzer,
-    imsi_requested::ImsiRequestedAnalyzer, incomplete_sib::IncompleteSibAnalyzer,
-    information_element::InformationElement, nas_null_cipher::NasNullCipherAnalyzer,
-    null_cipher::NullCipherAnalyzer, priority_2g_downgrade::LteSib6And7DowngradeAnalyzer,
-    test_analyzer::TestAnalyzer,
+    imsi_exposing_reject::ImsiExposingRejectAnalyzer,
+    imsi_exposure_rate::ImsiExposureRateAnalyzer, imsi_requested::ImsiRequestedAnalyzer,
+    incomplete_sib::IncompleteSibAnalyzer, information_element::InformationElement,
+    nas_null_cipher::NasNullCipherAnalyzer, null_cipher::NullCipherAnalyzer,
+    priority_2g_downgrade::LteSib6And7DowngradeAnalyzer, test_analyzer::TestAnalyzer,
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -24,6 +25,8 @@ pub struct AnalyzerConfig {
     pub null_cipher: bool,
     pub nas_null_cipher: bool,
     pub incomplete_sib: bool,
+    pub imsi_exposing_reject: bool,
+    pub imsi_exposure_rate: bool,
     pub test_analyzer: bool,
 }
 
@@ -36,6 +39,8 @@ impl Default for AnalyzerConfig {
             null_cipher: true,
             nas_null_cipher: true,
             incomplete_sib: true,
+            imsi_exposing_reject: true,
+            imsi_exposure_rate: true,
             test_analyzer: false,
         }
     }
@@ -339,6 +344,14 @@ impl Harness {
 
         if analyzer_config.incomplete_sib {
             harness.add_analyzer(Box::new(IncompleteSibAnalyzer {}))
+        }
+
+        if analyzer_config.imsi_exposing_reject {
+            harness.add_analyzer(Box::new(ImsiExposingRejectAnalyzer {}))
+        }
+
+        if analyzer_config.imsi_exposure_rate {
+            harness.add_analyzer(Box::new(ImsiExposureRateAnalyzer::new()))
         }
 
         if analyzer_config.test_analyzer {

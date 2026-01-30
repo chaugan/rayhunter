@@ -162,8 +162,8 @@ pub async fn test_warning(
         "packet_timestamp": chrono::Utc::now().to_rfc3339(),
         "skipped_message_reason": null,
         "events": [{
-            "event_type": "High",
-            "message": "TEST: This is a test warning injected via /api/test-warning"
+            "event_type": "Informational",
+            "message": "TEST: This is a test notification injected via /api/test-warning"
         }]
     });
     let mut line = serde_json::to_string(&test_row).unwrap();

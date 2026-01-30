@@ -297,21 +297,32 @@ push_files() {
 
 set -e
 
+PIDFILE="/tmp/rayhunter.pid"
+DAEMON="/data/rayhunter/rayhunter-daemon"
+CONFIG="/data/rayhunter/config.toml"
+LOGFILE="/data/rayhunter/rayhunter.log"
+
 case "$1" in
 start)
     echo -n "Starting rayhunter: "
     #RAYHUNTER-PRESTART
-    start-stop-daemon -S -b --make-pidfile --pidfile /tmp/rayhunter.pid \
-    --startas /bin/sh -- -c "RUST_LOG=info exec /data/rayhunter/rayhunter-daemon /data/rayhunter/config.toml > /data/rayhunter/rayhunter.log 2>&1"
+    setsid sh -c "echo \$\$ > $PIDFILE; exec $DAEMON $CONFIG >> $LOGFILE 2>&1" </dev/null >/dev/null 2>&1 &
+    sleep 2
     echo "done"
     ;;
   stop)
     echo -n "Stopping rayhunter: "
-    start-stop-daemon -K -p /tmp/rayhunter.pid
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        rm -f "$PIDFILE"
+    else
+        killall rayhunter-daemon 2>/dev/null || true
+    fi
     echo "done"
     ;;
   restart)
     $0 stop
+    sleep 2
     $0 start
     ;;
   *)

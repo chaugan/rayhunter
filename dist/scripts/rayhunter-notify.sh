@@ -27,10 +27,12 @@ fi
 
 logger -t rayhunter-notify "Starting notification monitor (ntfy=$NTFY_URL, interval=${POLL_INTERVAL}s)"
 
-# Track the last warning count so we only notify on new warnings
+# Track last counts so we only notify on new events
 last_warning_count=0
+last_info_count=0
 if [ -f "$STATE_FILE" ]; then
-    last_warning_count=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+    last_warning_count=$(sed -n '1p' "$STATE_FILE" 2>/dev/null || echo 0)
+    last_info_count=$(sed -n '2p' "$STATE_FILE" 2>/dev/null || echo 0)
 fi
 
 send_notification() {
@@ -66,9 +68,11 @@ while true; do
     fi
 
     if [ -n "$report" ]; then
-        # Count lines containing warning-level events (Low, Medium, High)
+        # Count real warnings (Low, Medium, High) separately from informational
         warning_count=$(echo "$report" | grep -e '"Low"' -e '"Medium"' -e '"High"' 2>/dev/null | wc -l)
         warning_count=$((warning_count + 0))
+        info_count=$(echo "$report" | grep -e '"Informational"' 2>/dev/null | wc -l)
+        info_count=$((info_count + 0))
 
         if [ "$warning_count" -gt "$last_warning_count" ]; then
             new_warnings=$((warning_count - last_warning_count))
@@ -80,8 +84,22 @@ while true; do
                 "high"
 
             last_warning_count=$warning_count
-            echo "$last_warning_count" > "$STATE_FILE"
         fi
+
+        if [ "$info_count" -gt "$last_info_count" ]; then
+            new_infos=$((info_count - last_info_count))
+            logger -t rayhunter-notify "Detected $new_infos new info event(s) (total: $info_count)"
+
+            send_notification \
+                "Rayhunter Info" \
+                "Rayhunter test notification received. The notification pipeline is working correctly." \
+                "low"
+
+            last_info_count=$info_count
+        fi
+
+        # Save both counts
+        printf '%s\n%s\n' "$last_warning_count" "$last_info_count" > "$STATE_FILE"
     fi
 
     sleep "$POLL_INTERVAL"

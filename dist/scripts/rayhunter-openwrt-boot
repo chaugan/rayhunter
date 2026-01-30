@@ -228,6 +228,20 @@ start() {
     # Set up cellular data connection (QMI)
     setup_cellular
 
+    # Start the daemon on the modem if not already running
+    if ! adb shell ps 2>/dev/null | grep -q rayhunter-daemon; then
+        logger -t rayhunter "Starting rayhunter-daemon on modem..."
+        adb shell "setsid /data/rayhunter/rayhunter-daemon /data/rayhunter/config.toml >> /data/rayhunter/rayhunter.log 2>&1 </dev/null & sleep 2" 2>/dev/null
+        sleep 3
+        if adb shell ps 2>/dev/null | grep -q rayhunter-daemon; then
+            logger -t rayhunter "rayhunter-daemon started successfully"
+        else
+            logger -t rayhunter "WARNING: rayhunter-daemon may not have started"
+        fi
+    else
+        logger -t rayhunter "rayhunter-daemon already running on modem"
+    fi
+
     # Set up port forwarding
     adb forward tcp:8080 tcp:8080
     logger -t rayhunter "ADB port forwarding active (tcp:8080)"
@@ -263,6 +277,15 @@ start() {
             done
 
             if [ -n "$ntfy_url" ]; then
+                # Send boot-up notification
+                logger -t rayhunter "Sending boot-up notification to ntfy"
+                curl -s -o /dev/null \
+                    -H "Title: Rayhunter Online" \
+                    -H "Priority: low" \
+                    -H "Tags: white_check_mark" \
+                    -d "Rayhunter has started and is monitoring for IMSI catchers." \
+                    "$ntfy_url" 2>/dev/null || true
+
                 logger -t rayhunter "Notification monitor starting (ntfy=$ntfy_url)"
                 exec /usr/local/bin/rayhunter-notify.sh "$ntfy_url" 30
             else
@@ -285,6 +308,9 @@ stop() {
     # Stop notification monitor
     killall rayhunter-notify.sh 2>/dev/null || true
 
+    # Stop daemon on modem
+    adb shell killall rayhunter-daemon 2>/dev/null || true
+
     # Remove SD sync cron entry
     if crontab -l 2>/dev/null | grep -q "rayhunter-sync-sd"; then
         crontab -l 2>/dev/null | grep -v "rayhunter-sync-sd" | crontab -
@@ -297,5 +323,5 @@ stop() {
     ifconfig wwan0 down 2>/dev/null
     ip route del default dev wwan0 2>/dev/null || true
 
-    logger -t rayhunter "Port forwarding and cellular removed"
+    logger -t rayhunter "Port forwarding, daemon, and cellular removed"
 }

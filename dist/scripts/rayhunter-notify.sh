@@ -74,6 +74,13 @@ while true; do
         info_count=$(echo "$report" | grep -e '"Informational"' 2>/dev/null | wc -l)
         info_count=$((info_count + 0))
 
+        # Reset counters if a new recording session started (counts dropped)
+        if [ "$warning_count" -lt "$last_warning_count" ] || [ "$info_count" -lt "$last_info_count" ]; then
+            logger -t rayhunter-notify "New recording session detected, resetting counters"
+            last_warning_count=0
+            last_info_count=0
+        fi
+
         if [ "$warning_count" -gt "$last_warning_count" ]; then
             new_warnings=$((warning_count - last_warning_count))
             logger -t rayhunter-notify "Detected $new_warnings new warning(s) (total: $warning_count)"

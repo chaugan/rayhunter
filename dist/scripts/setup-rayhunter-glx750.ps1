@@ -52,7 +52,7 @@ $PackageRepos = @(
     "https://fw.gl-inet.com/releases/v${OpenWrtVersion}/packages-4.2/ath79/glinet"
 )
 
-$RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot", "rayhunter-notify.sh", "rayhunter-sync-sd.sh", "rayhunter-cmd.sh", "rayhunter-disk-monitor.sh")
+$RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot", "rayhunter-notify.sh", "rayhunter-sync-sd.sh", "rayhunter-cmd.sh", "rayhunter-disk-monitor.sh", "rayhunter-ntfy-manager.sh")
 $RequiredPackages = @("adb", "openssl-util", "coreutils-stty")
 
 $DownloadDir = Join-Path $PSScriptRoot "rayhunter-files"

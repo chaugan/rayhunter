@@ -11,11 +11,15 @@
     let testMessage = $state('');
     let testMessageType = $state<'success' | 'error' | null>(null);
     let showConfig = $state(false);
+    let savedNtfyUrl = $state('');
+
+    let ntfyUrlChanged = $derived(config ? config.ntfy_url !== savedNtfyUrl : false);
 
     async function load_config() {
         try {
             loading = true;
             config = await get_config();
+            savedNtfyUrl = config.ntfy_url;
             message = '';
             messageType = null;
         } catch (error) {
@@ -159,13 +163,23 @@
                         <p class="text-xs text-gray-500 mt-1">
                             Notifications are sent by the router-side monitor script (rayhunter-notify.sh)
                         </p>
+                        {#if config.ntfy_url}
+                            <div class="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-600 font-mono space-y-1">
+                                <div>Commands topic: <span class="text-gray-800">{config.ntfy_url}-cmd</span></div>
+                                <div>Status topic: <span class="text-gray-800">{config.ntfy_url}-status</span></div>
+                            </div>
+                        {:else}
+                            <p class="text-xs text-gray-400 mt-1 italic">
+                                Derived topic URLs will appear here when ntfy URL is configured.
+                            </p>
+                        {/if}
                     </div>
 
                     <div>
                         <button
                             type="button"
                             onclick={send_test_notification}
-                            disabled={testingNotification}
+                            disabled={testingNotification || ntfyUrlChanged}
                             class="bg-rayhunter-blue hover:bg-rayhunter-dark-blue disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-md flex flex-row gap-1 items-center"
                         >
                             {#if testingNotification}
@@ -190,6 +204,11 @@
                                 Send Test Notification
                             {/if}
                         </button>
+                        {#if ntfyUrlChanged}
+                            <p class="mt-2 text-xs text-amber-600">
+                                Save the config first — the ntfy URL has unsaved changes.
+                            </p>
+                        {/if}
                         {#if testMessage}
                             <div
                                 class="mt-2 p-2 rounded text-sm {testMessageType === 'error'

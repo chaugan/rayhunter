@@ -34,7 +34,7 @@
 param(
     [string]$RouterIP = "192.168.8.1",
     [string]$User = "root",
-    [string]$ReleaseTag = "ep06-v0.5.0",
+    [string]$ReleaseTag = "ep06-v0.7.0",
     [string]$OpenWrtVersion = "22.03.4",
     [string]$Arch = "mips_24kc"
 )
@@ -52,7 +52,7 @@ $PackageRepos = @(
     "https://fw.gl-inet.com/releases/v${OpenWrtVersion}/packages-4.2/ath79/glinet"
 )
 
-$RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot", "rayhunter-notify.sh", "rayhunter-sync-sd.sh", "rayhunter-cmd.sh", "rayhunter-disk-monitor.sh", "rayhunter-ntfy-manager.sh")
+$RayhunterFiles = @("rayhunter-daemon", "install-from-openwrt.sh", "rayhunter-openwrt-boot", "rayhunter-notify.sh", "rayhunter-sync-sd.sh", "rayhunter-cmd.sh", "rayhunter-disk-monitor.sh", "rayhunter-ntfy-manager.sh", "rayhunter-signal.sh")
 $RequiredPackages = @("adb", "openssl-util", "coreutils-stty")
 
 $DownloadDir = Join-Path $PSScriptRoot "rayhunter-files"

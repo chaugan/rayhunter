@@ -263,6 +263,8 @@ lte_sib6_and_7_downgrade = true
 null_cipher = true
 nas_null_cipher = true
 incomplete_sib = true
+imsi_exposing_reject = true
+imsi_exposure_rate = true
 test_analyzer = false
 CONFIGEOF
 }
@@ -530,7 +532,7 @@ install_boot_script() {
 
     # Install notification and SD sync helper scripts
     mkdir -p /usr/local/bin
-    for helper in rayhunter-notify.sh rayhunter-sync-sd.sh rayhunter-cmd.sh rayhunter-disk-monitor.sh rayhunter-ntfy-manager.sh; do
+    for helper in rayhunter-notify.sh rayhunter-sync-sd.sh rayhunter-cmd.sh rayhunter-disk-monitor.sh rayhunter-ntfy-manager.sh rayhunter-signal.sh; do
         local helper_path=""
         if [ -f "$script_dir/$helper" ]; then
             helper_path="$script_dir/$helper"

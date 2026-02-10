@@ -34,7 +34,7 @@
 param(
     [string]$RouterIP = "192.168.8.1",
     [string]$User = "root",
-    [string]$ReleaseTag = "ep06-v0.8.0",
+    [string]$ReleaseTag = "ep06-v0.9.0",
     [string]$OpenWrtVersion = "22.03.4",
     [string]$Arch = "mips_24kc"
 )

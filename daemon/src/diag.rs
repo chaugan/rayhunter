@@ -3,11 +3,13 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
+use serde::Serialize;
 use futures::{StreamExt, TryStreamExt, future};
 use log::{debug, error, info, warn};
 use tokio::fs::File;
@@ -17,7 +19,7 @@ use tokio::sync::{RwLock, oneshot};
 use tokio_stream::wrappers::LinesStream;
 use tokio_util::task::TaskTracker;
 
-use rayhunter::analysis::analyzer::{AnalysisLineNormalizer, AnalyzerConfig, EventType};
+use rayhunter::analysis::analyzer::{AnalysisLineNormalizer, AnalysisRow, AnalyzerConfig, EventType};
 use rayhunter::diag::{DataType, MessagesContainer};
 use rayhunter::diag_device::DiagDevice;
 use rayhunter::qmdl::QmdlWriter;
@@ -458,4 +460,65 @@ pub async fn get_analysis_report(
     let headers = [(CONTENT_TYPE, "application/x-ndjson")];
     let body = Body::from_stream(normalized_stream);
     Ok((headers, body).into_response())
+}
+
+#[derive(Serialize, Default)]
+pub struct AnalysisCounts {
+    pub high: u64,
+    pub medium: u64,
+    pub low: u64,
+    pub informational: u64,
+    pub total_rows: u64,
+}
+
+pub async fn get_analysis_counts(
+    State(state): State<Arc<ServerState>>,
+    Path(qmdl_name): Path<String>,
+) -> Result<Json<AnalysisCounts>, (StatusCode, String)> {
+    let qmdl_store = state.qmdl_store_lock.read().await;
+    let (entry_index, _) = if qmdl_name == "live" {
+        qmdl_store.get_current_entry().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "No QMDL data's being recorded to analyze, try starting a new recording!".to_string(),
+        ))?
+    } else {
+        qmdl_store.entry_for_name(&qmdl_name).ok_or((
+            StatusCode::NOT_FOUND,
+            format!("Couldn't find QMDL entry with name \"{qmdl_name}\""),
+        ))?
+    };
+    let analysis_file = qmdl_store
+        .open_entry_analysis(entry_index)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:?}")))?;
+
+    let reader = BufReader::new(analysis_file);
+    let mut lines = reader.lines();
+    let mut counts = AnalysisCounts::default();
+
+    // Skip first line (ReportMetadata)
+    let _ = lines.next_line().await.map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read analysis file: {e}"))
+    })?;
+
+    while let Some(line) = lines.next_line().await.map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read analysis file: {e}"))
+    })? {
+        if line.is_empty() {
+            continue;
+        }
+        counts.total_rows += 1;
+        if let Ok(row) = serde_json::from_str::<AnalysisRow>(&line) {
+            for event in row.events.iter().flatten() {
+                match event.event_type {
+                    EventType::High => counts.high += 1,
+                    EventType::Medium => counts.medium += 1,
+                    EventType::Low => counts.low += 1,
+                    EventType::Informational => counts.informational += 1,
+                }
+            }
+        }
+    }
+
+    Ok(Json(counts))
 }

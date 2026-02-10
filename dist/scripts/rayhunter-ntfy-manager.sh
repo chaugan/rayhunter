@@ -20,11 +20,13 @@ notify_pid=""
 cmd_pid=""
 disk_pid=""
 signal_pid=""
+temp_pid=""
 
 cleanup() {
     logger -t "$TAG" "Shutting down, killing child services..."
     kill_children
     kill_signal
+    kill_temp
     exit 0
 }
 
@@ -84,6 +86,25 @@ kill_signal() {
     signal_pid=""
 }
 
+start_temp() {
+    if [ -n "$temp_pid" ] && kill -0 "$temp_pid" 2>/dev/null; then
+        return
+    fi
+    if [ -x /usr/local/bin/rayhunter-temperature.sh ]; then
+        /usr/local/bin/rayhunter-temperature.sh &
+        temp_pid=$!
+        logger -t "$TAG" "Started rayhunter-temperature.sh (pid=$temp_pid)"
+    fi
+}
+
+kill_temp() {
+    if [ -n "$temp_pid" ] && kill -0 "$temp_pid" 2>/dev/null; then
+        kill "$temp_pid" 2>/dev/null || true
+        wait "$temp_pid" 2>/dev/null || true
+    fi
+    temp_pid=""
+}
+
 start_children() {
     local url="$1"
     logger -t "$TAG" "Starting child services (ntfy_url=$url)"
@@ -134,8 +155,9 @@ children_alive() {
 logger -t "$TAG" "Service manager started, polling every ${POLL_INTERVAL}s"
 
 while true; do
-    # Signal poller runs independently of ntfy_url
+    # Signal and temperature pollers run independently of ntfy_url
     start_signal
+    start_temp
 
     new_url=$(fetch_ntfy_url)
 

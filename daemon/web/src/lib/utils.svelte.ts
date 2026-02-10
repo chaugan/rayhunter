@@ -116,3 +116,17 @@ export async function get_signal_quality(): Promise<SignalQuality | null> {
         return null;
     }
 }
+
+export interface TemperatureData {
+    timestamp: number;
+    zones: number[];
+    max_temp: number;
+}
+
+export async function get_temperature(): Promise<TemperatureData | null> {
+    try {
+        return JSON.parse(await req('GET', '/api/temperature'));
+    } catch {
+        return null;
+    }
+}

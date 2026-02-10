@@ -208,6 +208,9 @@ pub async fn get_route_status(State(state): State<Arc<ServerState>>) -> Json<Rou
 const SIGNAL_FILE: &str = "/tmp/rayhunter-signal.json";
 const SIGNAL_MAX_AGE_SECS: u64 = 30;
 
+const TEMP_FILE: &str = "/tmp/rayhunter-temperature.json";
+const TEMP_MAX_AGE_SECS: u64 = 30;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignalQuality {
     pub timestamp: u64,
@@ -242,6 +245,43 @@ pub struct NeighbourCell {
     pub rsrq: i32,
     pub rsrp: i32,
     pub rssi: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TemperatureData {
+    pub timestamp: u64,
+    pub zones: Vec<i32>,
+    pub max_temp: i32,
+}
+
+pub async fn get_temperature() -> Result<Json<TemperatureData>, (StatusCode, String)> {
+    let content = tokio::fs::read_to_string(TEMP_FILE).await.map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Temperature data not available".to_string(),
+        )
+    })?;
+
+    let temp: TemperatureData = serde_json::from_str(&content).map_err(|e| {
+        error!("Failed to parse temperature JSON: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to parse temperature data".to_string(),
+        )
+    })?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if now.saturating_sub(temp.timestamp) > TEMP_MAX_AGE_SECS {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Temperature data is stale".to_string(),
+        ));
+    }
+
+    Ok(Json(temp))
 }
 
 pub async fn get_signal_quality() -> Result<Json<SignalQuality>, (StatusCode, String)> {

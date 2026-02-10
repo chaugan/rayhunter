@@ -14,7 +14,7 @@
 #   <ntfy_url>-cmd   - inbound commands (user publishes here)
 #   <ntfy_url>-status - outbound responses (router publishes here)
 #
-# Supported commands: status, start, stop, restart, warnings
+# Supported commands: status, start, stop, restart, warnings, vpn-on, vpn-off
 
 RAYHUNTER_API="http://127.0.0.1:8080"
 NTFY_URL="${1:-}"
@@ -57,9 +57,9 @@ send_response() {
 api_get() {
     local url="$1"
     if command -v curl >/dev/null 2>&1; then
-        curl -s --max-time 10 "$url" 2>/dev/null
+        curl -s --max-time 15 "$url" 2>/dev/null
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O - --timeout=10 "$url" 2>/dev/null
+        wget -q -O - --timeout=15 "$url" 2>/dev/null
     fi
 }
 
@@ -106,15 +106,24 @@ cmd_status() {
     modem_disk=$(adb shell df /data 2>/dev/null | tr -d '\r' | awk 'NR==2 {print $5}')
     sd_disk=$(df /mnt/sda1 2>/dev/null | awk 'NR==2 {print $5}')
 
-    # Count warnings from live report
-    report=$(api_get "$RAYHUNTER_API/api/analysis-report/live")
+    # Get warning counts from lightweight counts endpoint
+    local counts high med low
+    counts=$(api_get "$RAYHUNTER_API/api/analysis-counts/live")
     warning_count=0
     info_count=0
-    if [ -n "$report" ]; then
-        warning_count=$(echo "$report" | grep -c -e '"Low"' -e '"Medium"' -e '"High"' 2>/dev/null || true)
-        warning_count=$((warning_count + 0))
-        info_count=$(echo "$report" | grep -c -e '"Informational"' 2>/dev/null || true)
-        info_count=$((info_count + 0))
+    if [ -n "$counts" ]; then
+        if command -v jsonfilter >/dev/null 2>&1; then
+            high=$(echo "$counts" | jsonfilter -e '@.high' 2>/dev/null || echo 0)
+            med=$(echo "$counts" | jsonfilter -e '@.medium' 2>/dev/null || echo 0)
+            low=$(echo "$counts" | jsonfilter -e '@.low' 2>/dev/null || echo 0)
+            info_count=$(echo "$counts" | jsonfilter -e '@.informational' 2>/dev/null || echo 0)
+        else
+            high=$(echo "$counts" | grep -o '"high":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+            med=$(echo "$counts" | grep -o '"medium":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+            low=$(echo "$counts" | grep -o '"low":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+            info_count=$(echo "$counts" | grep -o '"informational":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+        fi
+        warning_count=$((high + med + low))
     fi
 
     send_response "Rayhunter Status" "Router: $router_uptime
@@ -163,33 +172,44 @@ cmd_restart() {
     fi
 }
 
-cmd_warnings() {
-    local report
-    report=$(api_get "$RAYHUNTER_API/api/analysis-report/live")
+cmd_vpn_on() {
+    ifup wg0 2>/dev/null
+    sleep 2
+    local status=$(wg show wg0 2>/dev/null | head -5)
+    if [ -n "$status" ]; then
+        send_response "VPN Connected" "WireGuard interface wg0 is up.\n$status"
+    else
+        send_response "VPN Failed" "Could not bring up wg0. Check WireGuard config."
+    fi
+}
 
-    if [ -z "$report" ]; then
-        send_response "Warnings" "Could not fetch analysis report from daemon API."
+cmd_vpn_off() {
+    ifdown wg0 2>/dev/null
+    send_response "VPN Disconnected" "WireGuard interface wg0 is down."
+}
+
+cmd_warnings() {
+    local counts
+    counts=$(api_get "$RAYHUNTER_API/api/analysis-counts/live")
+
+    if [ -z "$counts" ]; then
+        send_response "Warnings" "Could not fetch analysis counts from daemon API."
         return
     fi
 
     local high_count med_count low_count info_count total
-    high_count=$(echo "$report" | grep -c '"High"' 2>/dev/null || true)
-    high_count=$((high_count + 0))
-    med_count=$(echo "$report" | grep -c '"Medium"' 2>/dev/null || true)
-    med_count=$((med_count + 0))
-    low_count=$(echo "$report" | grep -c '"Low"' 2>/dev/null || true)
-    low_count=$((low_count + 0))
-    info_count=$(echo "$report" | grep -c '"Informational"' 2>/dev/null || true)
-    info_count=$((info_count + 0))
-    total=$((high_count + med_count + low_count))
-
-    # Extract unique analyzer names from warnings
-    local analyzers=""
-    if [ "$total" -gt 0 ]; then
-        analyzers=$(echo "$report" | grep -e '"Low"' -e '"Medium"' -e '"High"' | \
-            grep -o '"analyzer":"[^"]*"' | sort -u | sed 's/"analyzer":"//;s/"//' | \
-            tr '\n' ', ' | sed 's/,$//')
+    if command -v jsonfilter >/dev/null 2>&1; then
+        high_count=$(echo "$counts" | jsonfilter -e '@.high' 2>/dev/null || echo 0)
+        med_count=$(echo "$counts" | jsonfilter -e '@.medium' 2>/dev/null || echo 0)
+        low_count=$(echo "$counts" | jsonfilter -e '@.low' 2>/dev/null || echo 0)
+        info_count=$(echo "$counts" | jsonfilter -e '@.informational' 2>/dev/null || echo 0)
+    else
+        high_count=$(echo "$counts" | grep -o '"high":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+        med_count=$(echo "$counts" | grep -o '"medium":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+        low_count=$(echo "$counts" | grep -o '"low":[0-9]*' | grep -o '[0-9]*$' || echo 0)
+        info_count=$(echo "$counts" | grep -o '"informational":[0-9]*' | grep -o '[0-9]*$' || echo 0)
     fi
+    total=$((high_count + med_count + low_count))
 
     if [ "$total" -eq 0 ] && [ "$info_count" -eq 0 ]; then
         send_response "Warning Summary" "No warnings detected. All clear."
@@ -198,22 +218,39 @@ cmd_warnings() {
   High: $high_count
   Medium: $med_count
   Low: $low_count
-  Informational: $info_count${analyzers:+
-Analyzers with hits: $analyzers}"
+  Informational: $info_count"
     fi
 }
 
 # --- Main poll loop ---
+# Track last seen message ID to avoid gaps between polls.
+# First poll uses a time window; subsequent polls use the last ID.
+last_id=""
+
 while true; do
-    # Poll for new commands (messages from the last 10 seconds)
+    if [ -n "$last_id" ]; then
+        since_param="since=$last_id"
+    else
+        since_param="since=30s"
+    fi
+
     messages=""
     if command -v curl >/dev/null 2>&1; then
-        messages=$(curl -s --max-time 15 "$CMD_URL/json?poll=1&since=10s" 2>/dev/null)
+        messages=$(curl -s --max-time 15 "$CMD_URL/json?poll=1&$since_param" 2>/dev/null)
     elif command -v wget >/dev/null 2>&1; then
-        messages=$(wget -q -O - --timeout=15 "$CMD_URL/json?poll=1&since=10s" 2>/dev/null)
+        messages=$(wget -q -O - --timeout=15 "$CMD_URL/json?poll=1&$since_param" 2>/dev/null)
     fi
 
     if [ -n "$messages" ]; then
+        # Update last_id from the final message to avoid gaps on next poll
+        new_last_id=""
+        if command -v jsonfilter >/dev/null 2>&1; then
+            new_last_id=$(echo "$messages" | tail -1 | jsonfilter -e '@.id' 2>/dev/null)
+        else
+            new_last_id=$(echo "$messages" | tail -1 | grep -o '"id":"[^"]*"' | sed 's/"id":"//;s/"$//')
+        fi
+        [ -n "$new_last_id" ] && last_id="$new_last_id"
+
         echo "$messages" | while IFS= read -r line; do
             [ -z "$line" ] && continue
 
@@ -239,8 +276,10 @@ while true; do
                 stop)     cmd_stop ;;
                 restart)  cmd_restart ;;
                 warnings) cmd_warnings ;;
+                vpn-on)   cmd_vpn_on ;;
+                vpn-off)  cmd_vpn_off ;;
                 *)
-                    send_response "Unknown Command" "Unknown command: $cmd. Supported commands: status, start, stop, restart, warnings"
+                    send_response "Unknown Command" "Unknown command: $cmd. Supported commands: status, start, stop, restart, warnings, vpn-on, vpn-off"
                     ;;
             esac
         done

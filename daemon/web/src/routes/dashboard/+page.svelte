@@ -1,12 +1,13 @@
 <script lang="ts">
-    import { get_manifest, get_system_stats, get_signal_quality, get_config, req } from '$lib/utils.svelte';
+    import { get_manifest, get_system_stats, get_signal_quality, get_temperature, get_config, req } from '$lib/utils.svelte';
     import type { SystemStats } from '$lib/systemStats';
     import type { SignalQuality } from '$lib/signalQuality';
-    import type { Config } from '$lib/utils.svelte';
+    import type { Config, TemperatureData } from '$lib/utils.svelte';
     import { getSignalBars, getSignalColor, getSignalLevel } from '$lib/signalQuality';
 
     let system_stats: SystemStats | undefined = $state(undefined);
     let signal_quality: SignalQuality | null = $state(null);
+    let temperature: TemperatureData | null = $state(null);
     let current_recording: boolean = $state(false);
     let recording_start: Date | null = $state(null);
     let warning_counts = $state({ high: 0, medium: 0, low: 0, info: 0 });
@@ -51,6 +52,7 @@
     let rsrp_history: { t: number; v: number }[] = $state([]);
     let sinr_history: { t: number; v: number }[] = $state([]);
     let rsrq_history: { t: number; v: number }[] = $state([]);
+    let temp_history: { t: number; v: number }[] = $state([]);
 
     function push_sample(arr: { t: number; v: number }[], value: number) {
         const now = Date.now();
@@ -137,10 +139,20 @@
     const RSRP_RANGE = { min: -130, max: -60 };
     const SINR_RANGE = { min: -10, max: 35 };
     const RSRQ_RANGE = { min: -25, max: -3 };
+    const TEMP_RANGE = { min: 0, max: 90 };
+
+    const TEMP_ZONES: ChartZone[] = [
+        { min: 0, max: 10, color: 'rgba(59, 130, 246, 0.18)', label: 'Cold' },
+        { min: 10, max: 60, color: 'rgba(34, 197, 94, 0.18)', label: 'Normal' },
+        { min: 60, max: 70, color: 'rgba(234, 179, 8, 0.18)', label: 'Warm' },
+        { min: 70, max: 80, color: 'rgba(249, 115, 22, 0.18)', label: 'Hot' },
+        { min: 80, max: 90, color: 'rgba(239, 68, 68, 0.18)', label: 'Critical' },
+    ];
 
     const RSRP_TOOLTIP = 'Reference Signal Received Power — measures signal strength from the cell tower. Higher (less negative) = stronger signal.\nExcellent: > -80 dBm | Good: -80 to -90 | Fair: -90 to -100 | Weak: -100 to -110 | Poor: < -110';
     const SINR_TOOLTIP = 'Signal to Interference-plus-Noise Ratio — signal quality relative to background noise and interference. Higher = cleaner signal.\nExcellent: > 20 dB | Good: 13 to 20 | Fair: 0 to 13 | Poor: < 0';
     const RSRQ_TOOLTIP = 'Reference Signal Received Quality — signal quality factoring in resource block utilization. Higher (less negative) = better.\nGood: > -10 dB | Fair: -10 to -15 | Weak: -15 to -20 | Poor: < -20';
+    const TEMP_TOOLTIP = 'Modem temperature from thermal zone sensors.\nNormal: 10-60C | Warm: 60-70C | Hot: 70-80C | Critical: > 80C';
 
     interface ZoneRect {
         y: number;
@@ -168,6 +180,15 @@
     const rsrp_zones = compute_zones(RSRP_ZONES, RSRP_RANGE.min, RSRP_RANGE.max);
     const sinr_zones = compute_zones(SINR_ZONES, SINR_RANGE.min, SINR_RANGE.max);
     const rsrq_zones = compute_zones(RSRQ_ZONES, RSRQ_RANGE.min, RSRQ_RANGE.max);
+    const temp_zones = compute_zones(TEMP_ZONES, TEMP_RANGE.min, TEMP_RANGE.max);
+
+    function getTempColor(temp: number): string {
+        if (temp >= 75) return '#ef4444';
+        if (temp >= 70) return '#f97316';
+        if (temp >= 60) return '#eab308';
+        if (temp < 5) return '#3b82f6';
+        return '#22c55e';
+    }
 
     function getSinrColor(sinr: number): string {
         if (sinr >= 20) return '#22c55e';
@@ -185,6 +206,7 @@
 
     let sinr_color = $derived(signal_quality ? getSinrColor(signal_quality.serving_cell.sinr) : '#64748b');
     let rsrq_color = $derived(signal_quality ? getRsrqColor(signal_quality.serving_cell.rsrq) : '#64748b');
+    let temp_color = $derived(temperature ? getTempColor(temperature.max_temp) : '#64748b');
 
     let bars = $derived(signal_quality ? getSignalBars(signal_quality.serving_cell.rsrp) : 0);
     let color = $derived(signal_quality ? getSignalColor(signal_quality.serving_cell.rsrp) : '#6b7280');
@@ -211,6 +233,9 @@
     );
     let rsrq_line = $derived(
         build_polyline(rsrq_history, 280, 80, RSRQ_RANGE.min, RSRQ_RANGE.max),
+    );
+    let temp_line = $derived(
+        build_polyline(temp_history, 280, 80, TEMP_RANGE.min, TEMP_RANGE.max),
     );
 
     function is_analyzer_active(key: string): boolean {
@@ -257,6 +282,12 @@
                     rsrp_history = push_sample(rsrp_history, sq.serving_cell.rsrp);
                     sinr_history = push_sample(sinr_history, sq.serving_cell.sinr);
                     rsrq_history = push_sample(rsrq_history, sq.serving_cell.rsrq);
+                }
+
+                const td = await get_temperature();
+                temperature = td;
+                if (td) {
+                    temp_history = push_sample(temp_history, td.max_temp);
                 }
 
                 connection_ok = true;
@@ -446,6 +477,19 @@
                             </div>
                         </div>
                     {/if}
+                    {#if temperature}
+                        <div class="gauge-section">
+                            <div class="gauge-label">Temperature</div>
+                            <div class="temp-display">
+                                <span class="temp-value" style="color: {temp_color};">{temperature.max_temp}°C</span>
+                            </div>
+                            <div class="temp-zones">
+                                {#each temperature.zones as zone, i}
+                                    <span class="temp-zone-value">Z{i}: {zone}°</span>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                     <div class="version-info">
                         v{system_stats.runtime_metadata.rayhunter_version}
                     </div>
@@ -456,7 +500,7 @@
         </div>
 
         <!-- Charts row -->
-        {#if rsrp_history.length >= 2}
+        {#if rsrp_history.length >= 2 || temp_history.length >= 2}
             <div class="charts-row">
                 <div class="chart-card">
                     <div class="chart-header">
@@ -518,6 +562,28 @@
                         <polyline points={rsrq_line} class="chart-line" />
                     </svg>
                 </div>
+                {#if temp_history.length >= 2}
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <span class="chart-title" title={TEMP_TOOLTIP}>TEMP &#9432;</span>
+                            <span class="chart-value" style="color: {temp_color}">{chart_last(temp_history)}°C</span>
+                        </div>
+                        <svg viewBox="0 0 280 80" class="chart-svg" xmlns="http://www.w3.org/2000/svg">
+                            {#each temp_zones.rects as zone}
+                                <rect x="0" y={zone.y} width="280" height={zone.h} fill={zone.color} />
+                            {/each}
+                            {#each temp_zones.boundaries as by}
+                                <line x1="0" y1={by} x2="280" y2={by} class="zone-boundary" />
+                            {/each}
+                            {#each temp_zones.rects as zone}
+                                <text x="276" y={zone.ly} text-anchor="end" dominant-baseline="central" class="zone-label">{zone.label}</text>
+                            {/each}
+                            <text x="4" y="4" dominant-baseline="hanging" class="y-axis-label">{TEMP_RANGE.max}°C</text>
+                            <text x="4" y="76" dominant-baseline="auto" class="y-axis-label">{TEMP_RANGE.min}°C</text>
+                            <polyline points={temp_line} class="chart-line" />
+                        </svg>
+                    </div>
+                {/if}
             </div>
         {/if}
 
@@ -764,30 +830,30 @@
     .defense-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 0.5rem;
-        margin-bottom: 1rem;
+        gap: 0.625rem;
+        margin-bottom: 1.25rem;
     }
     .defense-item {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.25rem;
-        padding: 0.375rem;
+        gap: 0.375rem;
+        padding: 0.5rem 0.25rem;
         opacity: 0.3;
     }
     .defense-item.active {
         opacity: 1;
     }
     .defense-icon {
-        width: 32px;
-        height: 32px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         background: #374151;
         border: 2px solid #4b5563;
-        font-size: 0.625rem;
+        font-size: 0.8125rem;
         font-weight: 700;
         color: #6b7280;
         letter-spacing: 0.02em;
@@ -798,7 +864,7 @@
         color: #22c55e;
     }
     .defense-name {
-        font-size: 0.5625rem;
+        font-size: 0.6875rem;
         text-align: center;
         color: #94a3b8;
         line-height: 1.2;
@@ -808,26 +874,26 @@
     .warning-grid {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr 1fr;
-        gap: 0.5rem;
+        gap: 0.625rem;
     }
     .warning-box {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 0.5rem;
+        padding: 0.75rem 0.5rem;
         border-radius: 0.375rem;
         border: 1px solid #334155;
     }
     .warning-count {
-        font-size: 1.5rem;
+        font-size: 2rem;
         font-weight: 700;
         font-variant-numeric: tabular-nums;
         line-height: 1;
     }
     .warning-label {
-        font-size: 0.5625rem;
+        font-size: 0.6875rem;
         letter-spacing: 0.1em;
-        margin-top: 0.125rem;
+        margin-top: 0.25rem;
         opacity: 0.8;
     }
     .warning-high { background: rgba(239, 68, 68, 0.15); }
@@ -884,6 +950,26 @@
         font-size: 0.75rem;
         color: #94a3b8;
     }
+    .temp-display {
+        text-align: center;
+        margin-bottom: 0.25rem;
+    }
+    .temp-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+    .temp-zones {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.5rem;
+        font-size: 0.6875rem;
+        color: #94a3b8;
+        font-variant-numeric: tabular-nums;
+    }
+    .temp-zone-value {
+        white-space: nowrap;
+    }
     .version-info {
         margin-top: auto;
         color: #475569;
@@ -899,7 +985,7 @@
     /* Charts */
     .charts-row {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 1rem;
         padding: 0 2rem 1rem;
     }

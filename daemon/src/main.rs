@@ -33,8 +33,8 @@ use axum::Router;
 use axum::response::Redirect;
 use axum::routing::{get, post};
 use diag::{
-    DiagDeviceCtrlMessage, delete_all_recordings, delete_recording, get_analysis_report,
-    start_recording, stop_recording,
+    DiagDeviceCtrlMessage, delete_all_recordings, delete_recording, get_analysis_counts,
+    get_analysis_report, start_recording, stop_recording,
 };
 use server::test_warning;
 use log::{error, info};
@@ -66,6 +66,7 @@ fn get_router() -> AppRouter {
         .route("/api/delete-recording/{name}", post(delete_recording))
         .route("/api/delete-all-recordings", post(delete_all_recordings))
         .route("/api/analysis-report/{name}", get(get_analysis_report))
+        .route("/api/analysis-counts/{name}", get(get_analysis_counts))
         .route("/api/analysis", get(get_analysis_status))
         .route("/api/analysis/{name}", post(start_analysis))
         .route("/api/config", get(get_config))

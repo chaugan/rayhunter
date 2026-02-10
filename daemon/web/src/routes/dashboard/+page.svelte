@@ -275,6 +275,10 @@
 
 <svelte:head>
     <title>Rayhunter Dashboard</title>
+    <meta name="theme-color" content="#0f172a" />
+    <style>
+        html, body { background-color: #0f172a !important; }
+    </style>
 </svelte:head>
 
 <div class="dashboard">

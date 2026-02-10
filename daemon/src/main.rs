@@ -24,7 +24,7 @@ use crate::qmdl_store::RecordingStore;
 use crate::server::{
     ServerState, debug_set_display_state, get_config, get_qmdl, get_zip, serve_static, set_config,
 };
-use crate::stats::{get_qmdl_manifest, get_route_status, get_system_stats};
+use crate::stats::{get_qmdl_manifest, get_route_status, get_signal_quality, get_system_stats};
 
 use analysis::{
     AnalysisCtrlMessage, AnalysisStatus, get_analysis_status, run_analysis_thread, start_analysis,
@@ -72,7 +72,9 @@ fn get_router() -> AppRouter {
         .route("/api/config", post(set_config))
         .route("/api/test-warning", post(test_warning))
         .route("/api/debug/display-state", post(debug_set_display_state))
+        .route("/api/signal-quality", get(get_signal_quality))
         .route("/", get(|| async { Redirect::permanent("/index.html") }))
+        .route("/dashboard", get(|| async { Redirect::permanent("/dashboard.html") }))
         .route("/{*path}", get(serve_static))
 }
 

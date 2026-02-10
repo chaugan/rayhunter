@@ -1,11 +1,13 @@
 <script lang="ts">
     import { ManifestEntry } from '$lib/manifest.svelte';
-    import { get_manifest, get_system_stats } from '$lib/utils.svelte';
+    import { get_manifest, get_system_stats, get_signal_quality } from '$lib/utils.svelte';
     import ManifestTable from '$lib/components/ManifestTable.svelte';
     import Card from '$lib/components/ManifestCard.svelte';
     import type { SystemStats } from '$lib/systemStats';
+    import type { SignalQuality } from '$lib/signalQuality';
     import { AnalysisManager } from '$lib/analysisManager.svelte';
     import SystemStatsTable from '$lib/components/SystemStatsTable.svelte';
+    import SignalQualityCard from '$lib/components/SignalQualityCard.svelte';
     import DeleteAllButton from '$lib/components/DeleteAllButton.svelte';
     import RecordingControls from '$lib/components/RecordingControls.svelte';
     import ConfigForm from '$lib/components/ConfigForm.svelte';
@@ -20,6 +22,7 @@
     let entries: ManifestEntry[] = $state([]);
     let current_entry: ManifestEntry | undefined = $state(undefined);
     let system_stats: SystemStats | undefined = $state(undefined);
+    let signal_quality: SignalQuality | null = $state(null);
     let update_error: string | undefined = $state(undefined);
     let logview_shown: boolean = $state(false);
     $effect(() => {
@@ -40,6 +43,7 @@
                 current_entry = new_manifest.current_entry;
 
                 system_stats = await get_system_stats();
+                signal_quality = await get_signal_quality();
                 update_error = undefined;
                 loaded = true;
             } catch (error) {
@@ -60,6 +64,26 @@
     <!-- https://www.w3.org/WAI/tutorials/images/decorative/ -->
     <img src="/rayhunter_text.png" alt="" class="h-10 xl:h-12" />
     <div class="flex flex-row gap-4">
+        <a class="flex flex-row gap-1 group" href="/dashboard">
+            <span class="hidden text-white group-hover:text-gray-400 lg:flex">Dashboard</span>
+            <svg
+                class="w-6 h-6 text-white group-hover:text-gray-400"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                fill="none"
+                viewBox="0 0 24 24"
+            >
+                <path
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5Zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V5ZM4 13a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6Zm10 2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4Z"
+                />
+            </svg>
+        </a>
         <button onclick={() => (logview_shown = true)} class="flex flex-row gap-1 group">
             <span class="hidden text-white group-hover:text-gray-400 lg:flex">Logs</span>
             <svg
@@ -203,6 +227,7 @@
                 </div>
             {/if}
             <SystemStatsTable stats={system_stats!} />
+            <SignalQualityCard signal={signal_quality} />
         </div>
         <div class="flex flex-col gap-2">
             <div class="flex flex-row gap-2">

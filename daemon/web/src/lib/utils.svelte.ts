@@ -1,5 +1,6 @@
 import { add_error } from './action_errors.svelte';
 import { Manifest } from './manifest.svelte';
+import type { SignalQuality } from './signalQuality';
 import type { SystemStats } from './systemStats';
 
 export interface AnalyzerConfig {
@@ -106,4 +107,12 @@ export interface RouteStatus {
 
 export async function get_route_status(): Promise<RouteStatus> {
     return JSON.parse(await req('GET', '/api/route-status'));
+}
+
+export async function get_signal_quality(): Promise<SignalQuality | null> {
+    try {
+        return JSON.parse(await req('GET', '/api/signal-quality'));
+    } catch {
+        return null;
+    }
 }

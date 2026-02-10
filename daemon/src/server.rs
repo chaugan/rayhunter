@@ -97,6 +97,14 @@ pub async fn serve_static(
             include_bytes!("../web/build/index.html.gz"),
         )
             .into_response(),
+        "dashboard.html" => (
+            [
+                (header::CONTENT_TYPE, HeaderValue::from_static("text/html")),
+                (header::CONTENT_ENCODING, HeaderValue::from_static("gzip")),
+            ],
+            include_bytes!("../web/build/dashboard.html.gz"),
+        )
+            .into_response(),
         path => {
             warn!("404 on path: {path}");
             StatusCode::NOT_FOUND.into_response()

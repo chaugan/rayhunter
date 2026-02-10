@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::battery::get_battery_status;
 use crate::error::RayhunterError;
@@ -10,7 +11,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use log::error;
 use rayhunter::{Device, util::RuntimeMetadata};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 #[derive(Debug, Serialize)]
@@ -202,4 +203,74 @@ pub async fn get_route_status(State(state): State<Arc<ServerState>>) -> Json<Rou
     };
 
     Json(RouteStatus { has_default_route })
+}
+
+const SIGNAL_FILE: &str = "/tmp/rayhunter-signal.json";
+const SIGNAL_MAX_AGE_SECS: u64 = 30;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignalQuality {
+    pub timestamp: u64,
+    pub serving_cell: ServingCell,
+    pub neighbour_cells: Vec<NeighbourCell>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServingCell {
+    pub state: String,
+    pub tech: String,
+    #[serde(default)]
+    pub duplex: String,
+    pub mcc: String,
+    pub mnc: String,
+    pub cell_id: String,
+    pub pci: i32,
+    pub earfcn: i32,
+    pub band: i32,
+    pub rsrp: i32,
+    pub rsrq: i32,
+    pub rssi: i32,
+    pub sinr: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NeighbourCell {
+    #[serde(rename = "type")]
+    pub cell_type: String,
+    pub earfcn: i32,
+    pub pci: i32,
+    pub rsrq: i32,
+    pub rsrp: i32,
+    pub rssi: i32,
+}
+
+pub async fn get_signal_quality() -> Result<Json<SignalQuality>, (StatusCode, String)> {
+    let content = tokio::fs::read_to_string(SIGNAL_FILE).await.map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Signal quality data not available".to_string(),
+        )
+    })?;
+
+    let signal: SignalQuality = serde_json::from_str(&content).map_err(|e| {
+        error!("Failed to parse signal quality JSON: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to parse signal data".to_string(),
+        )
+    })?;
+
+    // Check staleness
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if now.saturating_sub(signal.timestamp) > SIGNAL_MAX_AGE_SECS {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Signal quality data is stale".to_string(),
+        ));
+    }
+
+    Ok(Json(signal))
 }

@@ -19,10 +19,12 @@ current_ntfy_url=""
 notify_pid=""
 cmd_pid=""
 disk_pid=""
+signal_pid=""
 
 cleanup() {
     logger -t "$TAG" "Shutting down, killing child services..."
     kill_children
+    kill_signal
     exit 0
 }
 
@@ -61,6 +63,25 @@ kill_children() {
     notify_pid=""
     cmd_pid=""
     disk_pid=""
+}
+
+start_signal() {
+    if [ -n "$signal_pid" ] && kill -0 "$signal_pid" 2>/dev/null; then
+        return
+    fi
+    if [ -x /usr/local/bin/rayhunter-signal.sh ]; then
+        /usr/local/bin/rayhunter-signal.sh &
+        signal_pid=$!
+        logger -t "$TAG" "Started rayhunter-signal.sh (pid=$signal_pid)"
+    fi
+}
+
+kill_signal() {
+    if [ -n "$signal_pid" ] && kill -0 "$signal_pid" 2>/dev/null; then
+        kill "$signal_pid" 2>/dev/null || true
+        wait "$signal_pid" 2>/dev/null || true
+    fi
+    signal_pid=""
 }
 
 start_children() {
@@ -113,6 +134,9 @@ children_alive() {
 logger -t "$TAG" "Service manager started, polling every ${POLL_INTERVAL}s"
 
 while true; do
+    # Signal poller runs independently of ntfy_url
+    start_signal
+
     new_url=$(fetch_ntfy_url)
 
     if [ "$new_url" = "$API_UNREACHABLE" ]; then

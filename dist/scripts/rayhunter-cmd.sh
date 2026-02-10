@@ -14,7 +14,7 @@
 #   <ntfy_url>-cmd   - inbound commands (user publishes here)
 #   <ntfy_url>-status - outbound responses (router publishes here)
 #
-# Supported commands: status, start, stop, restart, warnings, vpn-on, vpn-off
+# Supported commands: status, start, stop, restart, warnings
 
 RAYHUNTER_API="http://127.0.0.1:8080"
 NTFY_URL="${1:-}"
@@ -172,22 +172,6 @@ cmd_restart() {
     fi
 }
 
-cmd_vpn_on() {
-    ifup wg0 2>/dev/null
-    sleep 2
-    local status=$(wg show wg0 2>/dev/null | head -5)
-    if [ -n "$status" ]; then
-        send_response "VPN Connected" "WireGuard interface wg0 is up.\n$status"
-    else
-        send_response "VPN Failed" "Could not bring up wg0. Check WireGuard config."
-    fi
-}
-
-cmd_vpn_off() {
-    ifdown wg0 2>/dev/null
-    send_response "VPN Disconnected" "WireGuard interface wg0 is down."
-}
-
 cmd_warnings() {
     local counts
     counts=$(api_get "$RAYHUNTER_API/api/analysis-counts/live")
@@ -276,10 +260,8 @@ while true; do
                 stop)     cmd_stop ;;
                 restart)  cmd_restart ;;
                 warnings) cmd_warnings ;;
-                vpn-on)   cmd_vpn_on ;;
-                vpn-off)  cmd_vpn_off ;;
                 *)
-                    send_response "Unknown Command" "Unknown command: $cmd. Supported commands: status, start, stop, restart, warnings, vpn-on, vpn-off"
+                    send_response "Unknown Command" "Unknown command: $cmd. Supported commands: status, start, stop, restart, warnings"
                     ;;
             esac
         done
